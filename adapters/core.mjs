@@ -93,28 +93,39 @@ export function workflowDirs(cwd, env = process.env) {
   return [...new Set([join(cwd, WORKFLOW_DIR), ...extra])]
 }
 
-/** Discover *.workflow.{js,mjs} across the workflow dirs. A file's default export is either a workflow
- *  builder (has .toJSON()) or a FACTORY (sg) => workflow. The factory form lets a file that cannot
- *  resolve "skill-graph" (for example one shipped inside a plugin, away from the project's node_modules)
- *  still build a graph: the governor injects the DSL. Imports otherwise resolve via normal Node resolution. */
+/** Absolute paths of every *.workflow.{js,mjs} across the workflow dirs (project + SKILL_GRAPH_DIRS). */
+export function discoverWorkflowFiles(cwd, env = process.env) {
+  const files = []
+  for (const dir of workflowDirs(cwd, env)) {
+    try {
+      for (const f of readdirSync(dir)) if (f.endsWith(".workflow.js") || f.endsWith(".workflow.mjs")) files.push(join(dir, f))
+    } catch {
+      /* dir absent or unreadable */
+    }
+  }
+  return files
+}
+
+/** Load one workflow file to its serialized graph (.toJSON()), or null if it isn't a workflow. A file's
+ *  default export is either a workflow builder (has .toJSON()) or a FACTORY (sg) => workflow. The factory
+ *  form lets a file that cannot resolve "skill-graph" (for example one shipped inside a plugin, away from
+ *  the project's node_modules) still build a graph: we inject the DSL. */
+export async function loadWorkflowFile(file) {
+  const mod = await import(pathToFileURL(file).href)
+  let wf = mod.default
+  if (typeof wf === "function") wf = wf(SG) // factory: inject the DSL
+  return wf && typeof wf.toJSON === "function" ? wf.toJSON() : null
+}
+
+/** Discover and load every workflow graph across the workflow dirs. Unloadable files are skipped. */
 export async function loadGraphs(cwd, env = process.env) {
   const graphs = []
-  for (const dir of workflowDirs(cwd, env)) {
-    let files = []
+  for (const file of discoverWorkflowFiles(cwd, env)) {
     try {
-      files = readdirSync(dir).filter((f) => f.endsWith(".workflow.js") || f.endsWith(".workflow.mjs"))
+      const g = await loadWorkflowFile(file)
+      if (g) graphs.push(g)
     } catch {
-      continue // dir absent or unreadable
-    }
-    for (const f of files) {
-      try {
-        const mod = await import(pathToFileURL(join(dir, f)).href)
-        let wf = mod.default
-        if (typeof wf === "function") wf = wf(SG) // factory: inject the DSL
-        if (wf && typeof wf.toJSON === "function") graphs.push(wf.toJSON())
-      } catch {
-        /* skip an unloadable workflow file */
-      }
+      /* skip an unloadable workflow file */
     }
   }
   return graphs

@@ -58,11 +58,13 @@ flowchart TD
   audit-deps --> plan
   plan --> build
   build --> run-tests
-  run-tests -->|"npm test"| review
   run-tests --> build
-  review -->|"marker review.approved"| release
+  run-tests -->|npm test| review
   review --> build
+  review -->|marker review.approved| release
 ```
+
+That diagram is exactly what `skill-graph-mermaid` emits for this workflow — see [Visualize](#visualize).
 
 ## Why
 
@@ -72,7 +74,7 @@ explicit and binding.
 
 - **Deterministic.** A pure reducer decides ordering, tool permissions, joins, and loop termination.
   A join waits. A loop is capped. A step that leaves the graph is blocked. Every time.
-- **One file, visualized.** The workflow is the documentation. `toMermaid()` renders it.
+- **One file, visualized.** The workflow is the documentation. `toMermaid()` (or the `skill-graph-mermaid` CLI) renders it — as text, Markdown, or SVG.
 - **Drop in.** It runs on the hook system your harness already has. Install, add one hook, write a workflow.
 - **Portable.** A small core with thin adapters for Claude Code and Codex. Adding another harness is one short file.
 
@@ -98,6 +100,23 @@ npm install github:vy-labs/skill-graph
 4. Start the agent. The run begins when it enters the root skill, and the governor takes over.
 
 Codex setup follows the same shape. See [`examples/codex`](./examples/codex).
+
+## Visualize
+
+The package ships a `skill-graph-mermaid` CLI that renders a workflow to a [Mermaid](https://mermaid.js.org)
+flowchart — as text, Markdown, or an image:
+
+```bash
+skill-graph-mermaid                                   # all workflows under ./.skill-graph → stdout
+skill-graph-mermaid .skill-graph/ship.workflow.mjs    # one workflow → stdout
+skill-graph-mermaid ship.workflow.mjs -o flow.md      # Markdown with a fenced ```mermaid block
+skill-graph-mermaid ship.workflow.mjs -o flow.svg     # SVG (or .png), or just --svg
+skill-graph-mermaid ship.workflow.mjs -s .skill-graph/.state/main.json   # overlay a live run
+```
+
+Image output uses the [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) if it's on your
+`PATH` or via `npx` — it isn't a dependency. Equivalent in code: `toMermaid(wf.toJSON(), state?)`.
+Details in [`docs/dsl.md`](./docs/dsl.md#visualizing).
 
 ## How it works
 

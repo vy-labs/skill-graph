@@ -12,9 +12,10 @@
   },
   "bin": {
     "skill-graph-claude": "adapters/claude-code.mjs",
-    "skill-graph-codex": "adapters/codex.mjs"
+    "skill-graph-codex": "adapters/codex.mjs",
+    "skill-graph-mermaid": "bin/mermaid.mjs"
   },
-  "files": ["src", "adapters", "docs", "examples", "README.md", "LICENSE"],
+  "files": ["src", "adapters", "bin", "docs", "examples", "README.md", "LICENSE"],
   "scripts": {
     "test": "node --test"
   },
