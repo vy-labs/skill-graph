@@ -10,10 +10,12 @@
 // governed. All workflow files live in the PROJECT at .skill-graph/*.workflow.js.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs"
-import { join, dirname } from "node:path"
+import { join, dirname, delimiter } from "node:path"
 import { execSync } from "node:child_process"
 import { pathToFileURL } from "node:url"
-import { decide, initialState } from "../src/reducer.mjs"
+import * as SG from "../src/index.mjs"
+
+const { decide, initialState } = SG
 
 export const WORKFLOW_DIR = ".skill-graph"
 
@@ -83,24 +85,36 @@ function globExists(cwd, glob) {
 
 // ---- IO ---------------------------------------------------------------------------------------
 
-/** Discover *.workflow.js from the project's .skill-graph/. Each file's default export is a workflow
- *  builder (has .toJSON()). Imports resolve via normal Node resolution from the project. */
-export async function loadGraphs(cwd) {
-  const dir = join(cwd, WORKFLOW_DIR)
-  let files = []
-  try {
-    files = readdirSync(dir).filter((f) => f.endsWith(".workflow.js") || f.endsWith(".workflow.mjs"))
-  } catch {
-    return []
-  }
+/** Directories scanned for workflow files: the project's .skill-graph/, plus any in the
+ *  SKILL_GRAPH_DIRS env var (path-delimited). A host sets this to the directory of the workflows it
+ *  ships, substituting its own install path. Harness neutral: the host decides what that path is. */
+export function workflowDirs(cwd, env = process.env) {
+  const extra = (env.SKILL_GRAPH_DIRS ?? "").split(delimiter).map((s) => s.trim()).filter(Boolean)
+  return [...new Set([join(cwd, WORKFLOW_DIR), ...extra])]
+}
+
+/** Discover *.workflow.{js,mjs} across the workflow dirs. A file's default export is either a workflow
+ *  builder (has .toJSON()) or a FACTORY (sg) => workflow. The factory form lets a file that cannot
+ *  resolve "skill-graph" (for example one shipped inside a plugin, away from the project's node_modules)
+ *  still build a graph: the governor injects the DSL. Imports otherwise resolve via normal Node resolution. */
+export async function loadGraphs(cwd, env = process.env) {
   const graphs = []
-  for (const f of files) {
+  for (const dir of workflowDirs(cwd, env)) {
+    let files = []
     try {
-      const mod = await import(pathToFileURL(join(dir, f)).href)
-      const wf = mod.default
-      if (wf && typeof wf.toJSON === "function") graphs.push(wf.toJSON())
+      files = readdirSync(dir).filter((f) => f.endsWith(".workflow.js") || f.endsWith(".workflow.mjs"))
     } catch {
-      /* skip an unloadable workflow file */
+      continue // dir absent or unreadable
+    }
+    for (const f of files) {
+      try {
+        const mod = await import(pathToFileURL(join(dir, f)).href)
+        let wf = mod.default
+        if (typeof wf === "function") wf = wf(SG) // factory: inject the DSL
+        if (wf && typeof wf.toJSON === "function") graphs.push(wf.toJSON())
+      } catch {
+        /* skip an unloadable workflow file */
+      }
     }
   }
   return graphs

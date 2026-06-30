@@ -11,6 +11,38 @@ wf.root(a)                              // the skill that starts a run
 export default wf                       // the governor loads the default export
 ```
 
+### Two export forms
+
+A `.workflow.{js,mjs}` file's default export is either the workflow itself, or a **factory** that
+receives the DSL and returns a workflow:
+
+```js
+// direct: the common case, when the file can import the package
+import { workflow } from "skill-graph"
+export default workflow("my-flow") /* … */
+
+// factory: when the file cannot resolve "skill-graph" (for example a workflow shipped inside a plugin,
+// away from the project's node_modules). The governor injects the DSL.
+export default (sg) => {
+  const wf = sg.workflow("my-flow")
+  // sg also has fileExists, shell, marker, not, all, any
+  return wf
+}
+```
+
+### Where workflows are discovered
+
+By default the governor scans the project's `.skill-graph/` directory. Set the `SKILL_GRAPH_DIRS`
+environment variable (path delimited) to add more directories, which lets a host point at the workflows
+it ships:
+
+```bash
+SKILL_GRAPH_DIRS="/path/to/shipped/.skill-graph" node node_modules/skill-graph/adapters/claude-code.mjs
+```
+
+The host substitutes its own install path. Each harness's wiring, including how it provides that path,
+lives in the [examples](../examples).
+
 ### `wf.skill(name, opts)`
 
 `name` is the skill id the agent invokes (`Skill(name)`). The governor matches the live call to it.
