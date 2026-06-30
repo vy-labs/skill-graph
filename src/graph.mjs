@@ -4,14 +4,35 @@
 // See docs/specs/2026-06-29-skill-graph-workflow-framework.md for the design.
 
 // ---- predicate descriptors --------------------------------------------------------------------
-// Opaque to the reducer: the hook adapter evaluates them and passes booleans in via `probe`. Here
-// they are just data, so the graph (and its Mermaid) stay pure and serializable.
+// Opaque to the reducer for EVALUATION: the hook adapter runs them and passes booleans in via
+// `probe`, so the graph stays pure and serializable. `describe` below only RENDERS a descriptor to a
+// human label (no IO, no evaluation), which both the reducer's deny hints and Mermaid reuse.
 export const fileExists = (glob) => ({ kind: "fileExists", glob })
 export const shell = (cmd, { fails = false } = {}) => ({ kind: "shell", cmd, fails })
 export const marker = (name) => ({ kind: "marker", name })
 export const not = (p) => ({ kind: "not", p })
 export const all = (...ps) => ({ kind: "all", ps })
 export const any = (...ps) => ({ kind: "any", ps })
+
+/** Render a predicate descriptor to a short human label. Pure; unknown kinds → "". */
+export function describe(p) {
+  switch (p?.kind) {
+    case "fileExists":
+      return `exists ${p.glob}`
+    case "shell":
+      return `${p.cmd}${p.fails ? " fails" : ""}`
+    case "marker":
+      return `marker ${p.name}`
+    case "not":
+      return `not ${describe(p.p)}`
+    case "all":
+      return p.ps.map(describe).join(" & ")
+    case "any":
+      return p.ps.map(describe).join(" | ")
+    default:
+      return ""
+  }
+}
 
 const nameOf = (h) => (typeof h === "string" ? h : h.name)
 

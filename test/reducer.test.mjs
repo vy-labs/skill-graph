@@ -94,6 +94,58 @@ test("guarded edges + simple loop cap", () => {
   const capped = decide(g, { ...atF, loops: { [edgeKey("f", "e")]: 2 } }, skillEv("e"), probe({ guards: { [edgeKey("f", "e")]: true } }))
   assert.equal(capped.action, "deny")
   assert.match(capped.reason, /loop budget exhausted/)
+  assert.deepEqual(capped.loop, { reason: "edge-cap", iteration: 2, maxIter: 2 }) // structured loop info
+})
+
+// ---- structured deny guidance ----
+
+test("guard deny names the unmet condition, points to override, and carries the raw descriptor", () => {
+  const atF = { workflow: "t", leadSessionId: LEAD, active: ["f"], completed: ["a", "b", "c", "d", "e"], loops: {}, overrides: [] }
+  const r = decide(g, atF, skillEv("g"), probe({ guards: {} })) // f→g guarded by shell("t"), guard false
+  assert.equal(r.action, "deny")
+  assert.match(r.reason, /needs: t\b/) // the rendered guard condition
+  assert.match(r.reason, /workflow:override/) // escape hatch named
+  assert.deepEqual(r.guard, { kind: "shell", cmd: "t", fails: false }) // machine-readable descriptor
+})
+
+test("pending lists a guard-closed edge but omits the same edge once its guard is satisfied", () => {
+  // Active [f]; an illegal jump to a real-but-unreachable node ("a") triggers the deny+guidance.
+  // f→g is guarded by shell("t"): closed → it's pending; open → it drops out (it's legal-now, not pending).
+  const atF = { workflow: "t", leadSessionId: LEAD, active: ["f"], completed: ["a", "b", "c", "d", "e"], loops: {}, overrides: [] }
+  const closed = decide(g, atF, skillEv("a"), probe({ guards: {} }))
+  assert.deepEqual(closed.pending, [{ to: "g", needs: "t" }])
+  const open = decide(g, atF, skillEv("a"), probe({ guards: { [edgeKey("f", "g")]: true } }))
+  assert.deepEqual(open.pending, []) // guard satisfied → no longer pending
+})
+
+test("guard deny falls back to a generic phrase when the predicate has no renderable label", () => {
+  const wf = workflow("gx")
+  const a = wf.skill("a"), b = wf.skill("b")
+  a.edge(b, { when: { kind: "custom" } }) // describe() → "" for an unknown descriptor
+  wf.root(a)
+  const sg = wf.toJSON()
+  const r = decide(sg, initialState(sg, LEAD), skillEv("b"), probe({ guards: {} }))
+  assert.equal(r.action, "deny")
+  assert.match(r.reason, /needs: an unmet condition/)
+})
+
+test("join deny carries waitingOn; tool deny carries allowedTools", () => {
+  const joinSt = { workflow: "t", leadSessionId: LEAD, active: ["b", "c"], completed: ["a"], loops: {}, overrides: [] }
+  const j = decide(g, joinSt, skillEv("d"), probe({ doneWhen: { b: true } })) // c still pending
+  assert.equal(j.action, "deny")
+  assert.deepEqual(j.waitingOn, ["c"])
+
+  const t = decide(g, initialState(g, LEAD), toolEv("Bash"), probe()) // active [a] allows AskUserQuestion
+  assert.equal(t.action, "deny")
+  assert.deepEqual(t.allowedTools, ["AskUserQuestion"])
+})
+
+test("real-loop stop carries structured loop info (reason/iteration/maxIter)", () => {
+  const st = { ...atVerify(), loops: { verify: { history: [{ n: 1, status: "fail", signature: "same" }] } } }
+  const r = decide(l, st, skillEv("impl"), probe({ signature: "same" })) // same signature twice → no-progress
+  assert.equal(r.action, "deny")
+  assert.equal(r.loop.reason, "no-progress")
+  assert.equal(r.loop.maxIter, 5) // live cap from the graph node
 })
 
 test("off-graph skill denied with guidance; override always allowed", () => {
@@ -188,17 +240,18 @@ test("tool gating: allowedTools=[] denies every tool with a 'skills only' messag
   assert.match(r.reason, /allowed: \(skills only\)/)
 })
 
-test("legalNext lists back-edge targets (and skips guard-false edges) in a deny reason", () => {
+test("deny guidance: legalNext lists open targets; the guard-closed ship edge is reported as pending", () => {
   // From active [verify], an illegal jump to a real-but-unreachable node ("scope") triggers the
-  // deny+guidance path. Guidance includes the loop targets (back-edges bypass the join check) while
-  // the guarded verify→ship edge is omitted when its guard is false. (An UNKNOWN skill is instead
-  // waved through as "no opinion", so the target must be a real graph node with no edge from here.)
+  // deny+guidance path. Loop targets (back-edges bypass the join check) are legal-now; the guarded
+  // verify→ship edge isn't open yet, so it surfaces under `pending` with its unlock condition rather
+  // than being hidden. (An UNKNOWN skill is instead waved through as "no opinion".)
   const r = decide(l, atVerify(), skillEv("scope"), probe())
   assert.equal(r.action, "deny")
   assert.match(r.reason, /legal next:/)
-  assert.match(r.reason, /impl/)
-  assert.match(r.reason, /plan/)
-  assert.doesNotMatch(r.reason, /ship/) // guard false → not offered
+  assert.deepEqual(r.legalNext.sort(), ["impl", "plan", "verify"]) // active + back-edge targets, ship excluded
+  assert.ok(!r.legalNext.includes("ship"))
+  assert.deepEqual(r.pending, [{ to: "ship", needs: "npm test" }]) // reachable once the guard passes
+  assert.match(r.reason, /pending: ship \(needs npm test\)/)
 })
 
 test("forward transition is blocked when the source's done_when is not yet satisfied", () => {

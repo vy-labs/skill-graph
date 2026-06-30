@@ -175,5 +175,9 @@ export async function runGovernor({ event, toolName, toolInput, cwd, sessionId }
 
   const decision = decide(graph, state, ev, probe)
   if (decision.next) writeState(stateFile, decision.next)
-  return decision.action === "deny" ? { action: "deny", reason: decision.reason } : { action: "allow" }
+  // Forward the reducer's structured guidance (legalNext, waitingOn, pending, allowedTools, guard,
+  // loop) alongside the reason, dropping only the internal `next`. The LLM sees the reason string;
+  // a programmatic caller can read the fields. Harness envelopes still use just the reason.
+  const { next: _next, ...rest } = decision
+  return rest.action === "deny" ? rest : { action: "allow" }
 }
