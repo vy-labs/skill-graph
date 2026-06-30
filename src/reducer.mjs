@@ -8,6 +8,7 @@
 // See docs/specs/2026-06-29-skill-graph-workflow-framework.md.
 
 import { evaluateGuard, applyRecord } from "./loop.mjs"
+import { describe } from "./graph.mjs"
 
 export const OVERRIDE_SKILL = "workflow:override"
 export const edgeKey = (from, to) => `${from}->${to}`
@@ -34,7 +35,9 @@ export function joinSatisfied(join, parents, completed) {
   return join === "any" ? parents.some((p) => completed.includes(p)) : parents.every((p) => completed.includes(p))
 }
 
-const deny = (state, reason) => ({ action: "deny", reason, next: state })
+// A deny carries a human `reason` AND machine-readable guidance fields (legalNext, waitingOn,
+// pending, allowedTools, guard, loop) so a consumer can navigate structurally, not just parse prose.
+const deny = (state, reason, extra = {}) => ({ action: "deny", reason, next: state, ...extra })
 
 export function initialState(graph, leadSessionId) {
   return { workflow: graph.name, leadSessionId, active: [graph.root], completed: [], loops: {}, overrides: [] }
@@ -78,6 +81,19 @@ function legalNext(graph, state, probe) {
     set.add(e.to)
   }
   return [...set]
+}
+
+// Forward targets that EXIST from the frontier but aren't open yet because their guard isn't
+// satisfied. legalNext omits these (they're not legal *now*); reporting them tells the agent the node
+// is reachable and what would unlock it, instead of leaving it invisible.
+function pendingNext(graph, state, probe) {
+  const out = []
+  for (const e of graph.edges) {
+    if (e.back || !e.when || !state.active.includes(e.from)) continue
+    if (probe.guards?.[edgeKey(e.from, e.to)] === true) continue // already open → it's in legalNext
+    out.push({ to: e.to, needs: describe(e.when) })
+  }
+  return out
 }
 
 function override(graph, state, ev) {
@@ -124,12 +140,19 @@ function decideTransition(graph, state, target, probe) {
   if (state.active.includes(target)) return { action: "allow", next: state }
 
   const edge = graph.edges.find((e) => state.active.includes(e.from) && e.to === target)
-  if (!edge)
-    return deny(state, `cannot enter "${target}" from [${state.active.join(", ")}]. legal next: ${legalNext(graph, state, probe).join(", ") || "(none)"}`)
+  if (!edge) {
+    const legal = legalNext(graph, state, probe)
+    const pending = pendingNext(graph, state, probe)
+    const pendingNote = pending.length ? `. pending: ${pending.map((p) => `${p.to} (needs ${p.needs})`).join(", ")}` : ""
+    return deny(state, `cannot enter "${target}" from [${state.active.join(", ")}]. legal next: ${legal.join(", ") || "(none)"}${pendingNote}`, { legalNext: legal, pending })
+  }
 
   const key = edgeKey(edge.from, target)
   const isBack = !!edge.back
-  if (edge.when && probe.guards?.[key] !== true) return deny(state, `"${target}" not enterable yet (guard not satisfied).`)
+  if (edge.when && probe.guards?.[key] !== true) {
+    const cond = describe(edge.when)
+    return deny(state, `"${target}" not enterable yet — needs: ${cond || "an unmet condition"}. satisfy it, or use ${OVERRIDE_SKILL} to force the move.`, { guard: edge.when })
+  }
 
   let { completed, active, loops } = state
   if (isBack) {
@@ -143,12 +166,12 @@ function decideTransition(graph, state, target, probe) {
       const recorded = applyRecord(prior, { status: "fail", signature: probe.signature ?? null })
       const v = evaluateGuard(recorded)
       if (v.verdict === "stop")
-        return deny(state, `loop stopped at "${edge.from}": ${v.reason} (iteration ${v.iteration}/${v.maxIter}). use ${OVERRIDE_SKILL} or stop.`)
+        return deny(state, `loop stopped at "${edge.from}": ${v.reason} (iteration ${v.iteration}/${v.maxIter}). use ${OVERRIDE_SKILL} or stop.`, { loop: { reason: v.reason, iteration: v.iteration, maxIter: v.maxIter } })
       loops = { ...loops, [edge.from]: recorded }
     } else {
       // Simple per-edge cap (no node loop policy): a plain bounded counter.
       if (edge.max != null && (loops[key] ?? 0) >= edge.max)
-        return deny(state, `loop budget exhausted at "${edge.from}" (${edge.max}/${edge.max}). use ${OVERRIDE_SKILL} or stop.`)
+        return deny(state, `loop budget exhausted at "${edge.from}" (${edge.max}/${edge.max}). use ${OVERRIDE_SKILL} or stop.`, { loop: { reason: "edge-cap", iteration: edge.max, maxIter: edge.max } })
       loops = { ...loops, [key]: (loops[key] ?? 0) + 1 }
     }
     // Reset the whole loop body (everything forward-reachable from the target) so it is genuinely redone.
@@ -163,8 +186,10 @@ function decideTransition(graph, state, target, probe) {
     const sourceCompletes = src.doneWhen == null || completed.includes(edge.from)
     const effective = sourceCompletes ? uniq([...completed, edge.from]) : completed
     const parents = parentsOf(graph, target)
-    if (!joinSatisfied(graph.nodes[target].join, parents, effective))
-      return deny(state, `"${target}" waits on: ${parents.filter((p) => !effective.includes(p)).join(", ")}`)
+    if (!joinSatisfied(graph.nodes[target].join, parents, effective)) {
+      const waitingOn = parents.filter((p) => !effective.includes(p))
+      return deny(state, `"${target}" waits on: ${waitingOn.join(", ")}`, { waitingOn })
+    }
     completed = effective
     active = uniq([...active.filter((n) => n !== edge.from), target])
   }
@@ -176,5 +201,5 @@ function decideTool(graph, state, toolName) {
   if (restricted.length === 0) return { action: "allow", next: state } // no active node restricts → open
   if (restricted.every((n) => n.allowedTools.includes(toolName))) return { action: "allow", next: state }
   const allowed = uniq(restricted.flatMap((n) => n.allowedTools))
-  return deny(state, `"${toolName}" not permitted at [${state.active.join(", ")}]. allowed: ${allowed.join(", ") || "(skills only)"}`)
+  return deny(state, `"${toolName}" not permitted at [${state.active.join(", ")}]. allowed: ${allowed.join(", ") || "(skills only)"}`, { allowedTools: allowed })
 }

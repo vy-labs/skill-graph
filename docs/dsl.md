@@ -90,6 +90,23 @@ On each tool call, in order:
 Every guarantee (a join waits, a loop caps, a step that leaves the graph is blocked) is an explicit
 branch. The outcome is deterministic, not a model judgment.
 
+### What a denial tells you
+
+A deny is navigational, not just a refusal. The `reason` string is mirrored by machine-readable fields
+so a consumer can recover structurally instead of parsing prose:
+
+| denial | `reason` names | structured fields |
+|---|---|---|
+| wrong node (no edge from the frontier) | the legal next steps, and any guard-blocked nodes | `legalNext: [...]`, `pending: [{ to, needs }]` |
+| join not satisfied | the parents still outstanding | `waitingOn: [...]` |
+| guard not satisfied | the unmet condition, and `workflow:override` | `guard: <predicate descriptor>` |
+| tool not permitted here | the allowed tools | `allowedTools: [...]` |
+| loop cap / no-progress | the reason and iteration `n/max`, and `workflow:override` | `loop: { reason, iteration, maxIter }` |
+
+`pending` is the key navigational aid: a node reachable from the frontier but not open yet because its
+guard is unmet appears here (with the condition to satisfy), rather than being invisible — `legalNext`
+lists only what is traversable right now.
+
 ## Loops
 
 A `loopTo` back edge from a node with a `loop` policy records a failing iteration and consults the guard:

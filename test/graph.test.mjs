@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { workflow, fileExists, shell, marker, not, all, any } from "../src/graph.mjs"
+import { workflow, fileExists, shell, marker, not, all, any, describe as describePredicate } from "../src/graph.mjs"
 
 // Exhaustive coverage of the DSL surface documented in docs/dsl.md: every skill option,
 // every edge method, every predicate constructor, and the serialized toJSON shape.
@@ -14,6 +14,18 @@ test("predicate constructors produce the documented descriptors", () => {
   assert.deepEqual(not(p), { kind: "not", p })
   assert.deepEqual(all(p, p), { kind: "all", ps: [p, p] })
   assert.deepEqual(any(p), { kind: "any", ps: [p] })
+})
+
+test("describe renders each predicate kind to a label; unknown/empty → ''", () => {
+  assert.equal(describePredicate(fileExists("docs/*.md")), "exists docs/*.md")
+  assert.equal(describePredicate(shell("npm test")), "npm test")
+  assert.equal(describePredicate(shell("git diff", { fails: true })), "git diff fails")
+  assert.equal(describePredicate(marker("ready")), "marker ready")
+  assert.equal(describePredicate(not(marker("blocked"))), "not marker blocked")
+  assert.equal(describePredicate(all(fileExists("a"), marker("b"))), "exists a & marker b")
+  assert.equal(describePredicate(any(fileExists("a"), marker("b"))), "exists a | marker b")
+  assert.equal(describePredicate({ kind: "mystery" }), "")
+  assert.equal(describePredicate(null), "")
 })
 
 test("skill: allowedTools defaults to null (unrestricted) and accepts [] or a list", () => {

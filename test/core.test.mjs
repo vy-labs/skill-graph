@@ -137,6 +137,7 @@ test("runGovernor: a tool absent from the active node's allowedTools is denied w
   const r = await runGovernor({ event: "PreToolUse", toolName: "Bash", cwd: dir, sessionId: "lead" })
   assert.equal(r.action, "deny")
   assert.match(r.reason, /not permitted/)
+  assert.deepEqual(r.allowedTools, ["AskUserQuestion"]) // structured guidance forwarded, not just the reason
 })
 
 test("runGovernor: an event for no matching workflow (no run, non-root skill) → allow", async () => {

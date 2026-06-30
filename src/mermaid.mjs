@@ -1,24 +1,7 @@
 // Render a workflow graph (and, optionally, a live run's state) to a Mermaid flowchart. Pure.
 // See docs/specs/2026-06-29-skill-graph-workflow-framework.md §9.
 
-function describe(p) {
-  switch (p?.kind) {
-    case "fileExists":
-      return `exists ${p.glob}`
-    case "shell":
-      return `${p.cmd}${p.fails ? " fails" : ""}`
-    case "marker":
-      return `marker ${p.name}`
-    case "not":
-      return `not ${describe(p.p)}`
-    case "all":
-      return p.ps.map(describe).join(" & ")
-    case "any":
-      return p.ps.map(describe).join(" | ")
-    default:
-      return ""
-  }
-}
+import { describe } from "./graph.mjs"
 
 function edgeLabel(e) {
   const parts = []
