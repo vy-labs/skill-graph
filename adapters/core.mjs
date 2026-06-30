@@ -93,11 +93,32 @@ export function workflowDirs(cwd, env = process.env) {
   return [...new Set([join(cwd, WORKFLOW_DIR), ...extra])]
 }
 
+/** The per-run loop cap, when a host wants one other than each node's authored loop.max. Precedence:
+ *  a .skill-graph/.max-iter file in cwd (trimmed) wins over the SKILL_GRAPH_MAX_ITER env. Only a
+ *  positive integer counts; anything else (missing, blank, non-numeric, ≤0, fractional) yields null,
+ *  meaning "leave the authored cap alone". Pure but for the one file read. */
+export function effectiveMaxIter(cwd, env = process.env) {
+  let raw = null
+  try {
+    raw = readFileSync(join(cwd, WORKFLOW_DIR, ".max-iter"), "utf8").trim()
+  } catch {
+    /* no file → fall back to env */
+  }
+  if (!raw) raw = (env.SKILL_GRAPH_MAX_ITER ?? "").trim()
+  if (!/^\d+$/.test(raw)) return null // positive integer only; rejects "", "-1", "2.5", "abc"
+  const n = Number(raw)
+  return n > 0 ? n : null
+}
+
 /** Discover *.workflow.{js,mjs} across the workflow dirs. A file's default export is either a workflow
  *  builder (has .toJSON()) or a FACTORY (sg) => workflow. The factory form lets a file that cannot
  *  resolve "skill-graph" (for example one shipped inside a plugin, away from the project's node_modules)
- *  still build a graph: the governor injects the DSL. Imports otherwise resolve via normal Node resolution. */
+ *  still build a graph: the governor injects the DSL. Imports otherwise resolve via normal Node resolution.
+ *
+ *  After building each graph, a per-run cap (effectiveMaxIter) overrides every looping node's loop.max,
+ *  so a host can run with a chosen cap — and raise it and resume — without editing the workflow file. */
 export async function loadGraphs(cwd, env = process.env) {
+  const cap = effectiveMaxIter(cwd, env)
   const graphs = []
   for (const dir of workflowDirs(cwd, env)) {
     let files = []
@@ -111,13 +132,23 @@ export async function loadGraphs(cwd, env = process.env) {
         const mod = await import(pathToFileURL(join(dir, f)).href)
         let wf = mod.default
         if (typeof wf === "function") wf = wf(SG) // factory: inject the DSL
-        if (wf && typeof wf.toJSON === "function") graphs.push(wf.toJSON())
+        if (wf && typeof wf.toJSON === "function") graphs.push(applyMaxIter(wf.toJSON(), cap))
       } catch {
         /* skip an unloadable workflow file */
       }
     }
   }
   return graphs
+}
+
+/** Stamp a per-run cap onto every looping node's loop.max, returning a NEW graph. Non-mutating: the
+ *  workflow module is import-cached, so its node objects are shared across calls — cloning the touched
+ *  nodes keeps the authored caps intact for the next run. null leaves the caps untouched. */
+function applyMaxIter(graph, cap) {
+  if (cap == null) return graph
+  const nodes = {}
+  for (const [name, node] of Object.entries(graph.nodes)) nodes[name] = node.loop ? { ...node, loop: { ...node.loop, max: cap } } : node
+  return { ...graph, nodes }
 }
 
 export function branchKey(cwd) {

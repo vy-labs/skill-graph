@@ -139,8 +139,13 @@ function decideTransition(graph, state, target, probe) {
       // Record it and let the deterministic guard decide proceed/stop (max-iter OR same-signature
       // no-progress) — the model can't talk past a stop. `probe.signature` is the iteration's failure
       // fingerprint, supplied by the adapter (e.g. the set of failing checks).
-      const prior = state.loops[edge.from] ?? { maxIter: src.loop.max ?? 5, history: [] }
-      const recorded = applyRecord(prior, { status: "fail", signature: probe.signature ?? null })
+      //
+      // The cap is re-derived LIVE from the current graph node every call, never trusted from stored
+      // state. This is what lets a host raise loop.max (per run, via the adapter override) and resume:
+      // history persists in state, but a freshly-raised cap immediately governs the next iteration,
+      // so a run stopped at the old cap proceeds once the cap is lifted.
+      const prior = state.loops[edge.from] ?? { history: [] }
+      const recorded = applyRecord({ history: prior.history ?? [], maxIter: src.loop.max ?? 5 }, { status: "fail", signature: probe.signature ?? null })
       const v = evaluateGuard(recorded)
       if (v.verdict === "stop")
         return deny(state, `loop stopped at "${edge.from}": ${v.reason} (iteration ${v.iteration}/${v.maxIter}). use ${OVERRIDE_SKILL} or stop.`)

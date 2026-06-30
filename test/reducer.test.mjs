@@ -31,13 +31,15 @@ const g = G()
 
 // linear-with-real-loop graph (the feature-dev shape, generic names):
 // scope → ctx → plan → impl → verify ; verify ⇄ impl (bug) ; verify ⇄ plan (wrong) ; verify → ship (pass)
-function L() {
+// verifyMax is the looping node's authored cap; the reducer reads it LIVE each call, so tests fake
+// the cap through the graph (not through state.loops[node].maxIter, which is now ignored).
+function L(verifyMax = 5) {
   const wf = workflow("L")
   const scope = wf.skill("scope", { allowedTools: ["AskUserQuestion"] })
   const ctx = wf.skill("ctx", { allowedTools: ["Task", "Read"], doneWhen: fileExists("ctx.md") })
   const plan = wf.skill("plan", { doneWhen: fileExists("plan.md") })
   const impl = wf.skill("impl", { allowedTools: ["Edit", "Bash"] })
-  const verify = wf.skill("verify", { allowedTools: ["Bash"], loop: { max: 5, noProgress: true } })
+  const verify = wf.skill("verify", { allowedTools: ["Bash"], loop: { max: verifyMax, noProgress: true } })
   const ship = wf.skill("ship")
   scope.then(ctx); ctx.then(plan); plan.then(impl); impl.then(verify)
   verify.loopTo(impl); verify.loopTo(plan)
@@ -135,11 +137,42 @@ test("real loop: wrong-approach → back to plan, resets plan onward", () => {
   assert.deepEqual(r.next.completed.sort(), ["ctx", "scope"])
 })
 
-test("real loop: max-iter stops", () => {
-  const st = { ...atVerify(), loops: { verify: { maxIter: 2, history: [{ n: 1, status: "fail", signature: "x" }] } } }
-  const r = decide(l, st, skillEv("impl"), probe({ signature: "y" }))
+test("real loop: max-iter stops (cap read live from the graph node, not from stored state)", () => {
+  // Cap faked via the graph (L(2)); the maxIter that used to live in state is ignored now.
+  const st = { ...atVerify(), loops: { verify: { history: [{ n: 1, status: "fail", signature: "x" }] } } }
+  const r = decide(L(2), st, skillEv("impl"), probe({ signature: "y" }))
   assert.equal(r.action, "deny")
   assert.match(r.reason, /loop stopped.*max-iter/)
+  assert.match(r.reason, /\/2\)/) // the live cap (2) shows in the message
+})
+
+test("real loop: a stale maxIter in stored state does not override the live graph cap", () => {
+  // Old state carries maxIter:2 from a prior run; the graph now authorises 5. The live cap wins,
+  // so a 2-entry history (which would have stopped at the old cap) still proceeds.
+  const st = { ...atVerify(), loops: { verify: { maxIter: 2, history: [{ n: 1, status: "fail", signature: "a" }, { n: 2, status: "fail", signature: "b" }] } } }
+  const r = decide(L(5), st, skillEv("impl"), probe({ signature: "c" }))
+  assert.equal(r.action, "allow")
+})
+
+test("real loop: a stored loop entry with no history field is tolerated (defaults to empty)", () => {
+  const st = { ...atVerify(), loops: { verify: { maxIter: 2 } } } // present, but no history
+  const r = decide(L(5), st, skillEv("impl"), probe({ signature: "a" }))
+  assert.equal(r.action, "allow")
+  assert.equal(r.next.loops.verify.history.length, 1) // started fresh from []
+})
+
+test("bump-and-resume: raising the live cap lets a run stopped at the old cap proceed, history preserved", () => {
+  const histAtCapTwo = [{ n: 1, status: "fail", signature: "a" }, { n: 2, status: "fail", signature: "b" }]
+  const st = () => ({ ...atVerify(), loops: { verify: { history: [...histAtCapTwo] } } })
+  // With the cap at 2, the next failing back-edge is the 3rd iteration → max-iter stop.
+  const capped = decide(L(2), st(), skillEv("impl"), probe({ signature: "c" }))
+  assert.equal(capped.action, "deny")
+  assert.match(capped.reason, /max-iter/)
+  // Raise the cap to 5 and resume with the SAME persisted history → proceeds; history kept + extended.
+  const resumed = decide(L(5), st(), skillEv("impl"), probe({ signature: "c" }))
+  assert.equal(resumed.action, "allow")
+  assert.equal(resumed.next.loops.verify.history.length, 3) // two prior iterations + this one
+  assert.deepEqual(resumed.next.loops.verify.history.slice(0, 2), histAtCapTwo) // earlier history intact
 })
 
 test("real loop: same-signature twice stops as no-progress", () => {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { workflow, fileExists, shell, marker, not, all, any } from "../src/graph.mjs"
 import { edgeKey } from "../src/reducer.mjs"
-import { selectWorkflow, buildProbe, evalPredicate, loadGraphs, workflowDirs, branchKey, runGovernor, WORKFLOW_DIR } from "../adapters/core.mjs"
+import { selectWorkflow, buildProbe, evalPredicate, loadGraphs, workflowDirs, branchKey, runGovernor, effectiveMaxIter, WORKFLOW_DIR } from "../adapters/core.mjs"
 
 const ENGINE = new URL("../src/index.mjs", import.meta.url).pathname
 
@@ -19,6 +19,8 @@ function makeProject(body) {
 }
 // Workflow: root "a" allows only AskUserQuestion, then b.
 const ROOT_WF = `const wf = workflow("proj"); const a = wf.skill("a", { allowedTools: ["AskUserQuestion"] }); const b = wf.skill("b"); a.then(b); wf.root(a); export default wf`
+// Workflow with a looping node (cap authored at 5), to prove the per-run override rewrites loop.max.
+const LOOP_WF = `const wf = workflow("loop"); const impl = wf.skill("impl"); const verify = wf.skill("verify", { loop: { max: 5, noProgress: true } }); impl.then(verify); verify.loopTo(impl); wf.root(impl); export default wf`
 // Workflow with a doneWhen node and a guarded edge, so buildProbe actually evaluates predicates.
 const PRED_WF = `import { fileExists, shell } from ${JSON.stringify(ENGINE)}
 const wf = workflow("pred"); const a = wf.skill("a", { doneWhen: fileExists("done.md") }); const b = wf.skill("b"); a.edge(b, { when: shell("true") }); wf.root(a); export default wf`
@@ -104,6 +106,43 @@ test("workflowDirs: bare project dir when SKILL_GRAPH_DIRS is unset, and dedupes
   assert.deepEqual(workflowDirs("/proj", {}), [join("/proj", WORKFLOW_DIR)])
   // An extra dir equal to the project dir collapses (Set dedup); blank entries are dropped.
   assert.deepEqual(workflowDirs("/proj", { SKILL_GRAPH_DIRS: `  ${join("/proj", WORKFLOW_DIR)} :: ` }), [join("/proj", WORKFLOW_DIR)])
+})
+
+// ---- per-run loop cap override ----
+
+test("effectiveMaxIter: env sets the cap; only a positive integer counts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-mi-"))
+  assert.equal(effectiveMaxIter(dir, {}), null) // nothing set → leave authored cap
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "3" }), 3)
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: " 4 " }), 4) // trimmed
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "0" }), null) // ≤0 rejected
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "-2" }), null)
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "2.5" }), null) // non-integer
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "abc" }), null)
+})
+
+test("effectiveMaxIter: a .skill-graph/.max-iter file wins over the env", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-mi-"))
+  mkdirSync(join(dir, WORKFLOW_DIR), { recursive: true })
+  writeFileSync(join(dir, WORKFLOW_DIR, ".max-iter"), "7\n")
+  assert.equal(effectiveMaxIter(dir, {}), 7)
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "3" }), 7) // file takes precedence
+})
+
+test("effectiveMaxIter: a blank or invalid file falls through to the env", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-mi-"))
+  mkdirSync(join(dir, WORKFLOW_DIR), { recursive: true })
+  writeFileSync(join(dir, WORKFLOW_DIR, ".max-iter"), "   ") // blank after trim
+  assert.equal(effectiveMaxIter(dir, { SKILL_GRAPH_MAX_ITER: "9" }), 9)
+})
+
+test("loadGraphs: the per-run cap overrides every looping node's loop.max; absent → authored cap kept", async () => {
+  const dir = makeProject(LOOP_WF)
+  const overridden = await loadGraphs(dir, { SKILL_GRAPH_MAX_ITER: "12" })
+  assert.equal(overridden.find((g) => g.name === "loop").nodes.verify.loop.max, 12)
+  // Non-mutating: a subsequent load with no override sees the authored cap, not the leaked 12.
+  const authored = await loadGraphs(dir, {})
+  assert.equal(authored.find((g) => g.name === "loop").nodes.verify.loop.max, 5)
 })
 
 // ---- runGovernor: the full IO orchestration ----

@@ -101,6 +101,20 @@ A `loopTo` back edge from a node with a `loop` policy records a failing iteratio
 Taking a back edge resets the loop body (everything reachable forward from the target) so it is genuinely
 redone. A node without a `loop` policy can still use a per edge cap with `edge(t, { max })`.
 
+### Tuning the cap per run
+
+The cap defaults to the node's authored `loop.max`, but a host can override it for a single run without
+editing the workflow. The adapter resolves an effective cap in this order:
+
+1. `.skill-graph/.max-iter` in the project (the trimmed file contents), else
+2. the `SKILL_GRAPH_MAX_ITER` environment variable.
+
+Only a positive integer is honoured; anything else leaves the authored `loop.max` in place. The reducer
+reads the cap **live on every iteration** rather than freezing it into state. Iteration history persists in
+`state.loops`, so raising the cap (bump the file or env) and resuming **continues the same loop** — a run
+stopped at the old cap proceeds from where it left off once the cap is lifted. No-progress (same-signature)
+detection is unaffected; it still stops a loop that is spinning without new failures.
+
 ## State
 
 Branch keyed JSON at `.skill-graph/.state/<branch>.json`:
