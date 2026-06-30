@@ -64,6 +64,35 @@ lives in the [examples](../examples).
 | `a.edge(t, { when, max })` | an explicit edge with an optional guard predicate and an optional per edge loop cap. |
 | `a.loopTo(t, { when })` | a back edge (a loop) to an earlier node, bounded by `a`'s `loop` policy. |
 
+### `wf.allowAlways(rules)` — tools permitted at every node
+
+Some tools should be allowed everywhere without repeating them in each node's `allowedTools`, and a host
+often needs to write its own bookkeeping files at any node *without* opening `Write` wholesale. `rules`
+is an array of `{ tool, paths? }`:
+
+- **no `paths`** — the tool is allowed at every node, regardless of the node's `allowedTools`.
+- **`paths: [glob, …]`** — the tool is allowed only when the call's target file path matches one of the
+  globs; otherwise the call falls through to the node's normal gating. This keeps a delegation gate
+  intact (e.g. "at the context node you must delegate, not write the artifact yourself") while still
+  letting the host persist its own state.
+
+Calling `allowAlways` more than once appends. It serialises as `graph.allowAlways` (default `[]`, so
+existing workflows are unchanged). **The globs are the host's choice — the engine ships none.**
+
+```js
+wf.allowAlways([
+  { tool: "Read" },                                            // reading is always fine
+  { tool: "Task" }, { tool: "Agent" },                         // delegating to subagents is always fine
+  { tool: "Write", paths: [".myhost/**", ".skill-graph/**"] }, // host bookkeeping only — not Write at large
+  { tool: "Edit",  paths: [".myhost/**", ".skill-graph/**"] },
+])
+```
+
+The checked path comes from the tool call's `file_path`, `path`, or `filePath`. Globs match a path
+string purely (no filesystem): `*` stays within a segment, `**` crosses segments, and a relative glob
+like `.myhost/**` matches whether the harness reports a relative `.myhost/x` or an absolute
+`/abs/project/.myhost/x` (it matches at any `/` boundary). A tool that carries no path field is never
+granted by a path-scoped rule — it stays gated by the node.
 ## Predicates
 
 Descriptors the adapter evaluates against the project working tree (cwd):

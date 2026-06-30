@@ -132,3 +132,21 @@ test("toJSON: full serializable shape (name, root, nodes map, edges array)", () 
   assert.deepEqual(Object.keys(j.nodes), ["a", "b"])
   assert.equal(j.edges.length, 1)
 })
+
+test("allowAlways: serializes to graph.allowAlways, appends across calls, normalizes paths", () => {
+  const wf = workflow("w")
+  wf.skill("a"); wf.root("a")
+  assert.deepEqual(wf.toJSON().allowAlways, []) // default when never called
+  wf.allowAlways([{ tool: "Read" }, { tool: "Task" }])
+  wf.allowAlways([{ tool: "Write", paths: ["x/**"] }]) // a second call appends
+  assert.deepEqual(wf.toJSON().allowAlways, [
+    { tool: "Read" },
+    { tool: "Task" },
+    { tool: "Write", paths: ["x/**"] },
+  ])
+})
+
+test("allowAlways: a graph that never calls it has an empty policy (back-compat)", () => {
+  const wf = workflow("w"); wf.skill("a"); wf.root("a")
+  assert.deepEqual(wf.toJSON().allowAlways, [])
+})

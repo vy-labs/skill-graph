@@ -14,6 +14,34 @@ export const OVERRIDE_SKILL = "workflow:override"
 export const edgeKey = (from, to) => `${from}->${to}`
 
 const uniq = (a) => [...new Set(a)]
+
+// Pure glob match over a path STRING (no filesystem). `*` matches within one path segment, `**` across
+// segments. The glob may match the whole path OR a suffix that starts at a `/` boundary, so a relative
+// glob like ".x/**" matches both "a/.x/f" and an absolute "/u/p/.x/f" the harness might report. Pure:
+// same idea as the adapter's filesystem globber, but matching the given string, never touching disk.
+export function matchGlob(glob, path) {
+  if (typeof path !== "string") return false
+  const esc = glob.replace(/[.+^${}()|[\]\\?]/g, "\\$&") // escape regex metachars (keep * and /)
+  // ** → across segments, * → within a segment. Stash ** as a null byte (never in a glob) so the
+  // single-* pass can't clobber it, then expand it to ".*".
+  const re = esc.replace(/\*\*/g, "\0").replace(/\*/g, "[^/]*").replace(/\0/g, ".*")
+  return new RegExp(`(^|/)${re}$`).test(path)
+}
+
+// The path a tool call targets, across the field names different harnesses use. null when none.
+const toolPath = (toolInput) => toolInput?.file_path ?? toolInput?.path ?? toolInput?.filePath ?? null
+
+// Does a workflow-level allowAlways rule grant this tool call? An unscoped rule (no paths) allows the
+// tool everywhere; a path-scoped rule allows it only when the call's target path matches a glob.
+function allowAlwaysGrants(graph, toolName, toolInput) {
+  const path = toolPath(toolInput)
+  for (const rule of graph.allowAlways ?? []) {
+    if (rule.tool !== toolName) continue
+    if (!rule.paths) return true // unscoped → allowed at every node
+    if (path && rule.paths.some((g) => matchGlob(g, path))) return true
+  }
+  return false
+}
 // Structural parents only: back-edges are loops, not dependencies, so they must not participate in
 // join/readiness — otherwise a loop target could never be entered.
 const parentsOf = (graph, name) => graph.edges.filter((e) => e.to === name && !e.back).map((e) => e.from)
@@ -131,8 +159,8 @@ export function decide(graph, state, ev, probe) {
   if (target && graph.nodes[target]) return decideTransition(graph, state, target, probe)
   if (target) return { action: "allow", next: state } // a skill outside this graph — no opinion
 
-  // 5. A plain (non-skill) tool: gated by the active node(s)' allowed_tools.
-  return decideTool(graph, state, ev.toolName)
+  // 5. A plain (non-skill) tool: workflow-level allowAlways first, then the active node(s)' allowed_tools.
+  return decideTool(graph, state, ev.toolName, ev.toolInput)
 }
 
 function decideTransition(graph, state, target, probe) {
@@ -196,7 +224,12 @@ function decideTransition(graph, state, target, probe) {
   return { action: "allow", next: refresh(graph, { ...state, completed, active, loops }, probe) }
 }
 
-function decideTool(graph, state, toolName) {
+function decideTool(graph, state, toolName, toolInput) {
+  // Workflow-level allowAlways wins first: a tool permitted at every node (optionally only for certain
+  // path globs) is allowed regardless of the node's list. A path-scoped rule that doesn't match falls
+  // through to the node gating below, so e.g. Write to a declared bookkeeping path is allowed while
+  // Write elsewhere stays gated.
+  if (allowAlwaysGrants(graph, toolName, toolInput)) return { action: "allow", next: state }
   const restricted = state.active.map((n) => graph.nodes[n]).filter((n) => n && n.allowedTools !== null)
   if (restricted.length === 0) return { action: "allow", next: state } // no active node restricts → open
   if (restricted.every((n) => n.allowedTools.includes(toolName))) return { action: "allow", next: state }
