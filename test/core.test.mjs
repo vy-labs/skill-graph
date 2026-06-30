@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { workflow, fileExists, shell, marker, not, all, any } from "../src/graph.mjs"
 import { edgeKey } from "../src/reducer.mjs"
-import { selectWorkflow, buildProbe, evalPredicate, loadGraphs, workflowDirs, branchKey, runGovernor, WORKFLOW_DIR } from "../adapters/core.mjs"
+import { selectWorkflow, buildProbe, evalPredicate, loadGraphs, loadWorkflowFile, discoverWorkflowFiles, workflowDirs, branchKey, runGovernor, WORKFLOW_DIR } from "../adapters/core.mjs"
 
 const ENGINE = new URL("../src/index.mjs", import.meta.url).pathname
 
@@ -200,6 +200,29 @@ test("loadGraphs discovers .skill-graph/*.workflow.js in the project", async () 
   assert.equal(graphs.length, 1)
   assert.equal(graphs[0].name, "demo")
   assert.equal(graphs[0].root, "a")
+})
+
+test("discoverWorkflowFiles lists .workflow.{js,mjs} paths and ignores other files", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-disc-"))
+  mkdirSync(join(dir, WORKFLOW_DIR), { recursive: true })
+  writeFileSync(join(dir, WORKFLOW_DIR, "a.workflow.mjs"), "export default null")
+  writeFileSync(join(dir, WORKFLOW_DIR, "b.workflow.js"), "export default null")
+  writeFileSync(join(dir, WORKFLOW_DIR, "notes.txt"), "x")
+  const found = discoverWorkflowFiles(dir, {}).map((p) => p.replace(join(dir, WORKFLOW_DIR) + "/", ""))
+  assert.deepEqual(found.sort(), ["a.workflow.mjs", "b.workflow.js"])
+})
+
+test("loadWorkflowFile returns toJSON for direct & factory exports, null for a non-workflow", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-lw-"))
+  const direct = join(dir, "d.workflow.mjs")
+  writeFileSync(direct, `import { workflow } from ${JSON.stringify(ENGINE)}\nconst wf = workflow("d"); wf.skill("a"); wf.root("a"); export default wf`)
+  const factory = join(dir, "f.workflow.mjs")
+  writeFileSync(factory, `export default (sg) => { const wf = sg.workflow("f"); wf.skill("a"); wf.root("a"); return wf }`)
+  const notWf = join(dir, "n.workflow.mjs")
+  writeFileSync(notWf, `export default { nope: true }`)
+  assert.equal((await loadWorkflowFile(direct)).name, "d")
+  assert.equal((await loadWorkflowFile(factory)).name, "f")
+  assert.equal(await loadWorkflowFile(notWf), null)
 })
 
 test("loadGraphs supports a factory workflow (default export is a function, no import needed)", async () => {

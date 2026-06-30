@@ -130,8 +130,31 @@ Branch keyed JSON at `.skill-graph/.state/<branch>.json`:
 
 ## Visualizing
 
+Programmatically:
+
 ```js
 import { toMermaid } from "skill-graph"
 toMermaid(wf.toJSON())            // structure
 toMermaid(wf.toJSON(), state)     // with a live overlay (completed in green, active in bold)
 ```
+
+Or from the command line with the bundled `skill-graph-mermaid` bin:
+
+```bash
+# print Mermaid text (discovers .skill-graph/*.workflow.{mjs,js} when no path is given)
+skill-graph-mermaid
+skill-graph-mermaid .skill-graph/review.workflow.mjs
+
+# write a file — the extension picks the format
+skill-graph-mermaid review.workflow.mjs -o flow.md     # Markdown, fenced ```mermaid block
+skill-graph-mermaid review.workflow.mjs -o flow.svg     # SVG (or .png) via the mermaid-cli
+skill-graph-mermaid review.workflow.mjs --svg           # → review.svg
+
+# overlay a live run (completed green, active bold)
+skill-graph-mermaid review.workflow.mjs -s .skill-graph/.state/main.json
+```
+
+SVG/PNG output shells out to the [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`mmdc`),
+which is **not** a dependency: the bin uses `mmdc` from your `PATH`, falls back to `npx`, or takes an
+explicit `--mmdc <path>`. If none is available it writes the `.mmd` source and tells you how to install
+it. Run `skill-graph-mermaid --help` for all options.
