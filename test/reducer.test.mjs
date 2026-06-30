@@ -1,12 +1,13 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { workflow, fileExists, shell, marker } from "../src/graph.mjs"
-import { decide, initialState, edgeKey, joinSatisfied, OVERRIDE_SKILL } from "../src/reducer.mjs"
+import { decide, initialState, edgeKey, joinSatisfied, matchGlob, OVERRIDE_SKILL } from "../src/reducer.mjs"
 
 const LEAD = "sess-lead"
 const probe = (over = {}) => ({ sessionId: LEAD, doneWhen: {}, guards: {}, ...over })
 const skillEv = (name, input = {}) => ({ toolName: "Skill", toolInput: { skill: name, ...input } })
 const toolEv = (toolName) => ({ toolName, toolInput: {} })
+const toolEvP = (toolName, toolInput) => ({ toolName, toolInput }) // tool event with a typed input (path, etc.)
 
 // fork/join graph (fluent API): a → (b ∥ c) → d(join all) → e ⇄ f(simple cap) → g
 function G() {
@@ -340,4 +341,67 @@ test("real loop: a back-edge with no probe signature records a null fingerprint"
   const r = decide(l, atVerify(), skillEv("impl"), probe()) // probe() supplies no signature
   assert.equal(r.action, "allow")
   assert.equal(r.next.loops.verify.history[0].signature, null)
+})
+
+// ---- workflow-level allowAlways ----
+
+// A one-node graph whose only node forbids everything but AskUserQuestion, plus the given allowAlways.
+function AA(rules) {
+  const wf = workflow("aa")
+  wf.skill("a", { allowedTools: ["AskUserQuestion"] })
+  wf.root("a")
+  wf.allowAlways(rules)
+  return wf.toJSON()
+}
+
+test("matchGlob: ** crosses dirs, * stays within a segment, relative glob matches absolute paths", () => {
+  assert.equal(matchGlob(".synaptic/**", ".synaptic/a/b.json"), true)
+  assert.equal(matchGlob(".synaptic/**", "/Users/x/project/.synaptic/a.json"), true) // segment-boundary suffix
+  assert.equal(matchGlob("docs/*.md", "docs/a.md"), true)
+  assert.equal(matchGlob("docs/*.md", "docs/a/b.md"), false) // * does not cross /
+  assert.equal(matchGlob("a/**/b", "a/x/y/b"), true) // ** across dirs
+  assert.equal(matchGlob(".synaptic/**", "src/app.js"), false)
+  assert.equal(matchGlob(".synaptic/**", "x.synaptic/a"), false) // boundary, not a partial segment
+  assert.equal(matchGlob(".x/**", null), false) // no path → no match
+})
+
+test("allowAlways (no paths): the tool is allowed at every node; unrelated tools stay gated", () => {
+  const g = AA([{ tool: "Read" }])
+  const st = initialState(g, LEAD) // active [a], node allows only AskUserQuestion
+  assert.equal(decide(g, st, toolEvP("Read", {}), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("Bash", {}), probe()).action, "deny")
+})
+
+test("allowAlways (paths): Write to a declared glob is allowed where the node forbids Write; elsewhere denied", () => {
+  const g = AA([{ tool: "Write", paths: [".synaptic/**", ".skill-graph/**"] }])
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Write", { file_path: ".synaptic/feature-dev-state.json" }), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("Write", { file_path: ".skill-graph/.signature" }), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("Write", { file_path: "src/app.js" }), probe()).action, "deny") // strong gate holds
+})
+
+test("allowAlways (paths): the absolute form of a relative glob matches", () => {
+  const g = AA([{ tool: "Write", paths: [".synaptic/**"] }])
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Write", { file_path: "/Users/x/project/.synaptic/state.json" }), probe()).action, "allow")
+})
+
+test("allowAlways (paths): a path-scoped rule does not grant a tool that carries no path (Bash stays gated)", () => {
+  const g = AA([{ tool: "Write", paths: [".synaptic/**"] }])
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Bash", {}), probe()).action, "deny")
+})
+
+test("allowAlways: the path is read from file_path, path, or filePath", () => {
+  const g = AA([{ tool: "Write", paths: [".synaptic/**"] }])
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Write", { path: ".synaptic/a" }), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("Write", { filePath: ".synaptic/a" }), probe()).action, "allow")
+})
+
+test("reducer tolerates a graph with no allowAlways field (older serialization)", () => {
+  const g = AA([])
+  delete g.allowAlways // simulate a graph serialized before the feature existed
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Bash", {}), probe()).action, "deny") // node gating still applies
 })

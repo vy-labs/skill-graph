@@ -125,6 +125,10 @@ direct tools at that node, while subagents it delegates to run freely. A node fi
 `doneWhen` predicate holds (a file exists, a command passes, or a marker is written), or when the agent
 moves on if it has no predicate. A node with more parents unlocks once its join is satisfied.
 
+`wf.allowAlways(rules)` adds tools that are permitted at *every* node — either outright or only for
+file paths matching globs you supply (e.g. let the host write its own state files anywhere without
+opening `Write` wholesale). The globs are yours; the engine ships none. See [docs/dsl.md](./docs/dsl.md#wfallowalwaysrules--tools-permitted-at-every-node).
+
 Edges carry optional guards for branching, and `loopTo` builds a back edge governed by the node's loop
 policy. The loop policy stops on a maximum count, and stops early when two iterations report the same
 failure, so a stuck loop never spins.

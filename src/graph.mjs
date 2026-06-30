@@ -46,6 +46,17 @@ class Workflow {
     this._root = null
     this.nodes = new Map() // name -> { name, allowedTools, doneWhen, join }
     this.edges = [] // { from, to, when, max, fork }
+    this._allowAlways = [] // [{ tool, paths? }] — tools allowed at EVERY node (see allowAlways)
+  }
+
+  // Tools permitted at every node, regardless of a node's allowedTools. Each rule is { tool, paths? }:
+  //   no `paths`           → the tool is allowed everywhere.
+  //   `paths: [glob, ...]` → the tool is allowed only when the call's target file path matches a glob;
+  //                          otherwise the call falls through to the node's normal gating.
+  // The globs are the HOST's choice — the engine ships none. Calling this more than once appends.
+  allowAlways(rules) {
+    for (const r of rules) this._allowAlways.push(r.paths ? { tool: r.tool, paths: [...r.paths] } : { tool: r.tool })
+    return this
   }
 
   // allowedTools: null = unrestricted; [] = skills only (no direct tools); [..] = only those.
@@ -79,6 +90,7 @@ class Workflow {
       root: this._root,
       nodes: Object.fromEntries(this.nodes),
       edges: this.edges,
+      allowAlways: this._allowAlways,
     }
   }
 }
