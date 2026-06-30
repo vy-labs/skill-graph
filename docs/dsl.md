@@ -1,4 +1,4 @@
-# DSL & semantics reference
+# DSL and semantics reference
 
 `import { workflow, fileExists, shell, marker, not, all, any } from "skill-graph"`
 
@@ -13,33 +13,33 @@ export default wf                       // the governor loads the default export
 
 ### `wf.skill(name, opts)`
 
-`name` is the **skill id the agent invokes** (`Skill(name)`); the governor matches the live call to it.
+`name` is the skill id the agent invokes (`Skill(name)`). The governor matches the live call to it.
 
 | opt | meaning |
 |---|---|
-| `allowedTools` | `null` (default) = unrestricted; `[]` = skills only, no direct tools; `[…]` = only these tools allowed for the **lead's direct** calls at this node. |
-| `doneWhen` | a predicate that must hold for the node to count as complete (gates successors' joins). Omit → the node completes when the agent legally moves on. |
-| `join` | `"all"` (default) or `"any"` — for a node with multiple parents, complete all / at least one before it unlocks. |
-| `loop` | `{ max, noProgress }` — when set, this node's back-edges (`loopTo`) draw on the loop guard (see Loops). |
+| `allowedTools` | `null` (default) means unrestricted. `[]` means skills only, no direct tools. `[…]` means only these tools are allowed for the lead's direct calls at this node. |
+| `doneWhen` | a predicate that must hold for the node to count as complete (it gates the joins of its successors). Omit it and the node completes when the agent legally moves on. |
+| `join` | `"all"` (default) or `"any"`. For a node with several parents, complete all of them, or at least one, before it unlocks. |
+| `loop` | `{ max, noProgress }`. When set, this node's back edges (`loopTo`) draw on the loop guard (see Loops). |
 
 ### Edges (handle methods)
 
 | method | edge |
 |---|---|
-| `a.then(b, c, …)` | unguarded forward edge(s) `a → b`, `a → c`. |
-| `a.fork(b, c)` | forward edges + a parallel hint (the downstream join enforces order). |
-| `b.after(p, q)` | declares `b` a join over parents `p, q` (sugar for `p → b`, `q → b`). |
-| `a.edge(t, { when, max })` | explicit edge with an optional guard predicate and/or a per-edge loop cap. |
-| `a.loopTo(t, { when })` | a **back-edge** (loop) to an earlier node; bounded by `a`'s `loop` policy. |
+| `a.then(b, c, …)` | forward edge(s) `a` to `b`, `a` to `c`, with no guard. |
+| `a.fork(b, c)` | forward edges plus a parallel hint. The downstream join enforces the order. |
+| `b.after(p, q)` | declares `b` a join over parents `p` and `q` (sugar for `p` to `b`, `q` to `b`). |
+| `a.edge(t, { when, max })` | an explicit edge with an optional guard predicate and an optional per edge loop cap. |
+| `a.loopTo(t, { when })` | a back edge (a loop) to an earlier node, bounded by `a`'s `loop` policy. |
 
 ## Predicates
 
-Descriptors evaluated by the adapter against the project working tree (cwd):
+Descriptors the adapter evaluates against the project working tree (cwd):
 
 | predicate | true when |
 |---|---|
-| `fileExists("glob")` | a path matches (supports a single `*`, e.g. `docs/*.md`). |
-| `shell("cmd", { fails })` | `cmd` exits 0 (or non-zero with `{ fails: true }`). Evaluated only on transition events (cost). |
+| `fileExists("glob")` | a path matches (supports a single `*`, for example `docs/*.md`). |
+| `shell("cmd", { fails })` | `cmd` exits 0, or exits non zero with `{ fails: true }`. Evaluated only on transition events, for cost. |
 | `marker("name")` | `.skill-graph/name` exists (a file the agent writes to signal completion). |
 | `not(p)`, `all(p, …)`, `any(p, …)` | boolean combinators. |
 
@@ -47,36 +47,36 @@ Descriptors evaluated by the adapter against the project working tree (cwd):
 
 On each tool call, in order:
 
-1. **Not the lead session** → allow (subagents run free; `allowedTools` governs only the lead).
-2. **No run yet** + the event enters a graph's **root skill** → start the run.
-3. **`workflow:override`** skill → always allowed, logged; optionally moves the frontier (`{ to }`).
-4. **Entering a skill node** → allowed iff it's on the frontier, or an edge from an active node permits
-   it (guard true, join satisfied, loop budget left); otherwise **denied** with the legal next steps.
-5. **Any other tool** → allowed iff it's in the active node(s)' `allowedTools`; else **denied**.
+1. Not the lead session, so allow. Subagents run free. `allowedTools` governs only the lead.
+2. No run yet, and the event enters a graph's root skill, so start the run.
+3. The `workflow:override` skill, so always allow, record it, and optionally move the frontier (`{ to }`).
+4. Entering a skill node. Allowed when it sits on the frontier, or an edge from an active node permits it
+   (the guard is true, the join is satisfied, the loop budget remains). Otherwise blocked, with the legal
+   next steps named.
+5. Any other tool. Allowed when it is in the active node's `allowedTools`. Otherwise blocked.
 
-Every guarantee (join waits, loop caps, off-graph denies) is an explicit branch — deterministic, not a
-model judgment.
+Every guarantee (a join waits, a loop caps, a step that leaves the graph is blocked) is an explicit
+branch. The outcome is deterministic, not a model judgment.
 
 ## Loops
 
-A `loopTo` back-edge from a node with a `loop` policy records a failing iteration and consults the
-guard:
+A `loopTo` back edge from a node with a `loop` policy records a failing iteration and consults the guard:
 
-- **max-iter** — stop after `max` iterations (a runaway-spend valve).
-- **no-progress** — stop early if two consecutive iterations carry the **same failure signature**
-  (the adapter supplies the signature via `.skill-graph/.signature`).
+- **Maximum count.** Stop after `max` iterations, a runaway spend valve.
+- **No progress.** Stop early when two iterations in a row carry the same failure signature. The adapter
+  supplies that signature through `.skill-graph/.signature`.
 
-Taking a back-edge **resets the loop body** (everything forward-reachable from the target) so it is
-genuinely redone. A node without a `loop` policy can still use a per-edge `max` cap on `edge(t, { max })`.
+Taking a back edge resets the loop body (everything reachable forward from the target) so it is genuinely
+redone. A node without a `loop` policy can still use a per edge cap with `edge(t, { max })`.
 
 ## State
 
-Branch-keyed JSON at `.skill-graph/.state/<branch>.json`:
+Branch keyed JSON at `.skill-graph/.state/<branch>.json`:
 
 ```jsonc
 { "workflow": "my-flow", "leadSessionId": "…",
   "active": ["…"], "completed": ["…"],
-  "loops": { "node-or-edge": … }, "overrides": [ … ] }
+  "loops": { "node or edge": … }, "overrides": [ … ] }
 ```
 
 ## Visualizing
@@ -84,5 +84,5 @@ Branch-keyed JSON at `.skill-graph/.state/<branch>.json`:
 ```js
 import { toMermaid } from "skill-graph"
 toMermaid(wf.toJSON())            // structure
-toMermaid(wf.toJSON(), state)     // + live overlay (completed = green, active = bold)
+toMermaid(wf.toJSON(), state)     // with a live overlay (completed in green, active in bold)
 ```

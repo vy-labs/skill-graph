@@ -7,10 +7,20 @@
 // and format the neutral decision into Claude Code's envelope. All logic lives in core.mjs.
 // FAIL-OPEN: any error → emit nothing, exit 0 (never break a session).
 
+import { realpathSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { resolve } from "node:path"
 import { run } from "./core-io.mjs"
 import { runGovernor } from "./core.mjs"
+
+// True when this file was run directly (a hook), not imported (a test). realpathSync resolves symlinks
+// so it still matches import.meta.url under symlinked paths (e.g. macOS /var → /private/var).
+function isEntry() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+  } catch {
+    return false
+  }
+}
 
 /** Claude Code payload → normalized event. CC sends snake_case fields on stdin. */
 export function parseClaude(payload) {
@@ -32,6 +42,4 @@ export function formatClaude(decision) {
   return null
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  run(parseClaude, runGovernor, formatClaude)
-}
+if (isEntry()) run(parseClaude, runGovernor, formatClaude)

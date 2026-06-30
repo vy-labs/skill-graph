@@ -1,51 +1,80 @@
+<div align="center">
+
 # skill-graph
 
-**Workflow automation for AI coding agents — think n8n, but for your coding harness.**
+### Deterministic, n8n style workflows for AI coding agents
 
-Define an agent workflow as a directed graph of skill-nodes, and `skill-graph` enforces it as a
-deterministic **session governor**: it tracks where the agent is, **denies** tool/skill calls that go
-off-graph (with a reason), holds **join barriers**, runs bounded **loops**, and renders the graph to
-Mermaid. It works by a hook your harness already supports — no service, no daemon, no rewrite of your
-agent.
+Wire your agent's work as a graph of skills, then let a hook enforce it while the agent runs.
 
-Pure ESM, **harness-agnostic core** with thin adapters for **Claude Code** and **Codex** (more are a
-~40-line file away). No build, no runtime dependencies.
+</div>
+
+---
+
+## What it is
+
+skill-graph lets you describe an agent workflow as a directed graph of skill nodes. A hook then runs
+that graph as a **session governor**. On every tool call it checks where the agent is and whether the
+call is allowed. It blocks anything that leaves the graph and tells the agent why. It holds parallel
+branches at a join, runs bounded loops, and draws the whole thing as a Mermaid diagram.
+
+Think of it as n8n for your coding harness. You design the flow once, and the run follows it. The
+difference from a prompt is that the rules are binding and the decisions are deterministic, decided by
+a pure function rather than the model's goodwill.
+
+## A workflow
 
 ```js
-import { workflow, fileExists, shell } from "skill-graph"
+import { workflow, fileExists, shell, marker } from "skill-graph"
 
-const wf = workflow("review")
-const scope   = wf.skill("scoping", { allowedTools: ["AskUserQuestion"] })
-const explore = wf.skill("explore", { allowedTools: ["Read", "Grep", "Glob"], doneWhen: fileExists("NOTES.md") })
-const fix     = wf.skill("fix",     { allowedTools: ["Edit", "Write", "Bash", "Read"] })
-const verify  = wf.skill("verify",  { allowedTools: ["Bash"], loop: { max: 3, noProgress: true } })
-const done    = wf.skill("done")
+const wf = workflow("ship-a-feature")
 
-scope.then(explore); explore.then(fix); fix.then(verify)
-verify.loopTo(fix)                          // tests fail → loop back (bounded)
-verify.edge(done, { when: shell("npm test") })  // tests pass → done
-wf.root(scope)
+const intake   = wf.skill("intake",     { allowedTools: ["AskUserQuestion"] })
+const research = wf.skill("research",   { allowedTools: ["Read", "Grep", "WebFetch"], doneWhen: fileExists("docs/research.md") })
+const audit    = wf.skill("audit-deps", { allowedTools: ["Bash", "Read"], doneWhen: fileExists("docs/deps.md") })
+const plan     = wf.skill("plan",       { join: "all", allowedTools: ["Write", "Read"], doneWhen: fileExists("PLAN.md") })
+const build    = wf.skill("build",      { allowedTools: ["Edit", "Write", "Bash", "Read"] })
+const tests    = wf.skill("run-tests",  { allowedTools: ["Bash"], loop: { max: 5, noProgress: true } })
+const review   = wf.skill("review",     { allowedTools: ["Read", "Bash"], loop: { max: 3 } })
+const release  = wf.skill("release",    { allowedTools: ["Bash"] })
+
+intake.fork(research, audit)                        // research and the dependency audit run in parallel
+plan.after(research, audit)                         // plan waits until both finish
+plan.then(build)
+build.then(tests)
+tests.loopTo(build)                                 // a failing suite sends work back to build
+tests.edge(review, { when: shell("npm test") })     // a green suite unlocks review
+review.loopTo(build)                                // requested changes send work back to build
+review.edge(release, { when: marker("review.approved") })
+
+wf.root(intake)
 export default wf
 ```
 
 ```mermaid
 flowchart TD
-  scoping --> explore --> fix --> verify
-  verify -->|≤3| fix
-  verify -->|npm test| done
+  intake --> research
+  intake --> audit-deps
+  research --> plan
+  audit-deps --> plan
+  plan --> build
+  build --> run-tests
+  run-tests -->|"npm test"| review
+  run-tests --> build
+  review -->|"marker review.approved"| release
+  review --> build
 ```
 
 ## Why
 
-A capable agent still wanders: it explores when it should have delegated, edits before it has a plan,
-declares done while tests are red, or loops forever. `skill-graph` makes the *shape* of the work
-explicit and **binding** — the rules live in one readable file, they're enforced deterministically by a
-hook (not by hoping the model complies), and you can see them as a diagram.
+A capable agent still wanders. It explores when it should delegate, edits before it has a plan, calls
+the job done while tests are red, or loops without end. skill-graph makes the shape of the work
+explicit and binding.
 
-- **Deterministic.** Termination, ordering, and tool permissions are decided by a pure function, not
-  the model. A join waits; a loop is capped; an off-graph step is denied — every time.
-- **One file, visualized.** The workflow *is* the documentation. `toMermaid()` draws it.
-- **Drop-in.** It rides your harness's existing hook system. Install, add one hook, write a workflow.
+- **Deterministic.** A pure reducer decides ordering, tool permissions, joins, and loop termination.
+  A join waits. A loop is capped. A step that leaves the graph is blocked. Every time.
+- **One file, visualized.** The workflow is the documentation. `toMermaid()` renders it.
+- **Drop in.** It runs on the hook system your harness already has. Install, add one hook, write a workflow.
+- **Portable.** A small core with thin adapters for Claude Code and Codex. Adding another harness is one short file.
 
 ## Install
 
@@ -53,43 +82,48 @@ hook (not by hoping the model complies), and you can see them as a diagram.
 npm install github:vy-labs/skill-graph
 ```
 
-## Quickstart (Claude Code)
+## Quickstart for Claude Code
 
-1. `npm install github:vy-labs/skill-graph`
-2. Add the hook to `.claude/settings.json` (see [`examples/claude-code/`](./examples/claude-code/)):
+1. Install the package.
+2. Add the hook to `.claude/settings.json` (full snippet in [`examples/claude-code`](./examples/claude-code)):
    ```json
    { "hooks": {
      "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node node_modules/skill-graph/adapters/claude-code.mjs" }] }],
      "SessionStart":[{ "hooks": [{ "type": "command", "command": "node node_modules/skill-graph/adapters/claude-code.mjs" }] }]
    }}
    ```
-3. Write `.skill-graph/<name>.workflow.js` (a default-exported `workflow()` that `import`s `skill-graph`).
-4. Start your agent. Entering the root skill starts the run; the governor takes it from there.
+   The `PreToolUse` hook is the enforcer and is required. The `SessionStart` hook is optional. It
+   injects a short "you are here" note for resuming a run in progress, and you can leave it out.
+3. Write a workflow at `.skill-graph/your.workflow.mjs` that default exports a `workflow()`.
+4. Start the agent. The run begins when it enters the root skill, and the governor takes over.
 
-Codex setup is the same shape — see [`examples/codex/`](./examples/codex/).
+Codex setup follows the same shape. See [`examples/codex`](./examples/codex).
 
 ## How it works
 
-- A **node** is a skill your agent invokes; its name is the skill id. `allowedTools` limits the lead's
-  *direct* tools while at that node (delegated subagents run free).
-- A node completes via a **`doneWhen` predicate** (`fileExists` / `shell` exit-0 / `marker`) or, if it
-  has none, when the agent legally moves on. Successors unlock when their **join** is satisfied.
-- **Edges** can be guarded (`{ when: <predicate> }`) for deterministic branching; **`loopTo`** makes a
-  back-edge governed by the node's `loop` policy (`max` iterations + same-signature **no-progress** stop).
-- The governor runs on `PreToolUse`: it **denies** off-graph calls with guidance, and **allows** the
-  rest. State is branch-keyed under `.skill-graph/.state/`. An always-allowed `workflow:override`
-  escape hatch (logged) lets the agent leave the graph when reality diverges.
+A node is a skill the agent invokes, named by its skill id. `allowedTools` limits the lead agent's
+direct tools at that node, while subagents it delegates to run freely. A node finishes when its
+`doneWhen` predicate holds (a file exists, a command passes, or a marker is written), or when the agent
+moves on if it has no predicate. A node with more parents unlocks once its join is satisfied.
 
-Full reference: [docs/dsl.md](./docs/dsl.md). End-to-end guide: [docs/guide.md](./docs/guide.md).
+Edges carry optional guards for branching, and `loopTo` builds a back edge governed by the node's loop
+policy. The loop policy stops on a maximum count, and stops early when two iterations report the same
+failure, so a stuck loop never spins.
+
+The governor runs on every tool call. It blocks calls that leave the graph and allows the rest. Run
+state is keyed by git branch under `.skill-graph/.state`. When reality diverges from the plan, the
+agent can invoke `Skill("workflow:override", { to: "<node>" })`, which is always allowed and recorded.
+
+Full reference: [docs/dsl.md](./docs/dsl.md). Hands on guide: [docs/guide.md](./docs/guide.md).
 
 ## Harness support
 
 | Harness | Adapter | Status |
 |---|---|---|
 | Claude Code | `adapters/claude-code.mjs` | supported |
-| Codex | `adapters/codex.mjs` | supported (validate hook-config path for your version) |
-| Gemini / Cursor / Copilot / … | — | add a ~40-line adapter over the shared core |
+| Codex | `adapters/codex.mjs` | supported. Confirm the hook config path for your version. |
+| Gemini, Cursor, Copilot, others | add a short adapter over the shared core | open |
 
 ## License
 
-MIT © vy-labs
+MIT, vy-labs.

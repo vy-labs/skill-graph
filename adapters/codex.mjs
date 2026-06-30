@@ -8,10 +8,20 @@
 // translates it to the canonical names workflows use (so one workflow file works across harnesses).
 // FAIL-OPEN. Validate exact field names against your Codex version; adjust TOOL_MAP to its tool ids.
 
+import { realpathSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { resolve } from "node:path"
 import { run } from "./core-io.mjs"
 import { runGovernor } from "./core.mjs"
+
+// True when run directly (a hook), not imported (a test). realpathSync resolves symlinks so it matches
+// import.meta.url under symlinked paths (e.g. macOS /var → /private/var).
+function isEntry() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+  } catch {
+    return false
+  }
+}
 
 // Codex tool id → canonical (Claude-style) tool name used in workflow `allowedTools`.
 // Adjust to your Codex build's actual tool names.
@@ -44,6 +54,4 @@ export function formatCodex(decision) {
   return null
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  run(parseCodex, runGovernor, formatCodex)
-}
+if (isEntry()) run(parseCodex, runGovernor, formatCodex)

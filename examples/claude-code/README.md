@@ -1,4 +1,4 @@
-# skill-graph × Claude Code — example
+# skill-graph for Claude Code
 
 A 3-minute setup: install, wire one hook, drop a workflow, watch it govern.
 
@@ -10,8 +10,9 @@ npm install github:vy-labs/skill-graph
 
 ## 2. Wire the hook
 
-Merge [`settings.snippet.json`](./settings.snippet.json) into your `.claude/settings.json`
-(project-level) — it points `SessionStart` and `PreToolUse` at the Claude Code adapter:
+Merge [`settings.snippet.json`](./settings.snippet.json) into your `.claude/settings.json`. The
+`PreToolUse` hook is the enforcer and is required. The `SessionStart` hook is optional. It injects a
+one line "you are here" note that helps the agent resume an in progress run, and you can leave it out.
 
 ```json
 { "hooks": {
@@ -22,8 +23,11 @@ Merge [`settings.snippet.json`](./settings.snippet.json) into your `.claude/sett
 
 ## 3. Add a workflow
 
-Copy [`.skill-graph/review.workflow.js`](./.skill-graph/review.workflow.js) into your project's
-`.skill-graph/` directory. It defines `scoping → explore → fix → verify ⇄ fix → done`.
+Copy [`.skill-graph/review.workflow.mjs`](./.skill-graph/review.workflow.mjs) into your project's
+`.skill-graph/` directory. It defines the flow `scoping, explore, fix, verify (loops to fix), done`.
+
+> Workflow files are ES modules. Name them `.workflow.mjs` so they load in any project. A `.workflow.js`
+> name also works if your project sets `"type": "module"`. The governor discovers both.
 
 ## 4. Use it
 
@@ -36,6 +40,6 @@ From then on the governor:
 - **injects** "you are here / allowed next" at session start.
 
 Run state lives in `.skill-graph/.state/<branch>.json` (gitignored). To leave the graph deliberately,
-the agent can invoke `Skill(workflow:override, { to: "<node>" })` — always allowed, and logged.
+the agent can invoke `Skill(workflow:override, { to: "<node>" })`, which is always allowed and logged.
 
 See the repo [README](../../README.md) and [docs/guide.md](../../docs/guide.md) for the full model.
