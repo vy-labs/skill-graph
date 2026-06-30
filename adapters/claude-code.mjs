@@ -14,7 +14,7 @@ import { runGovernor } from "./core.mjs"
 
 // True when this file was run directly (a hook), not imported (a test). realpathSync resolves symlinks
 // so it still matches import.meta.url under symlinked paths (e.g. macOS /var → /private/var).
-function isEntry() {
+export function isEntry() {
   try {
     return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
   } catch {

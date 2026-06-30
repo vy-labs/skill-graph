@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { workflow, fileExists, shell, marker } from "../src/graph.mjs"
-import { decide, initialState, edgeKey, OVERRIDE_SKILL } from "../src/reducer.mjs"
+import { decide, initialState, edgeKey, joinSatisfied, OVERRIDE_SKILL } from "../src/reducer.mjs"
 
 const LEAD = "sess-lead"
 const probe = (over = {}) => ({ sessionId: LEAD, doneWhen: {}, guards: {}, ...over })
@@ -147,4 +147,144 @@ test("real loop: same-signature twice stops as no-progress", () => {
   const r = decide(l, st, skillEv("impl"), probe({ signature: "same" }))
   assert.equal(r.action, "deny")
   assert.match(r.reason, /no-progress/)
+})
+
+// ---- remaining decision branches ----
+
+test("subagent passthrough also leaves a null state null (no opinion)", () => {
+  // state === null AND non-lead is the `state && ...` short-circuit; the lead-with-null path:
+  assert.equal(decide(g, null, toolEv("Bash"), probe()).next, null) // no run, non-skill tool → no opinion
+})
+
+test("a Skill entered via toolInput.name (not .skill) still resolves the target", () => {
+  const r = decide(g, null, { toolName: "Skill", toolInput: { name: "a" } }, probe())
+  assert.deepEqual(r.next.active, ["a"]) // started the run via the `name` alias
+})
+
+test("a skill outside this graph, mid-run, gets no opinion (allow, state unchanged)", () => {
+  const st = initialState(g, LEAD)
+  const r = decide(g, st, skillEv("some-other-skill"), probe())
+  assert.equal(r.action, "allow")
+  assert.deepEqual(r.next, st) // refresh rebuilds the object; structurally unchanged
+})
+
+test("re-entering a node already on the frontier is allowed without an edge", () => {
+  const st = { ...initialState(g, LEAD), active: ["b", "c"], completed: ["a"] }
+  assert.equal(decide(g, st, skillEv("c"), probe()).action, "allow")
+})
+
+test("tool gating: an active node with allowedTools=null leaves all tools open", () => {
+  const st = { ...initialState(g, LEAD), active: ["d"] } // d has no allowedTools → unrestricted
+  assert.equal(decide(g, st, toolEv("Bash"), probe()).action, "allow")
+})
+
+test("tool gating: allowedTools=[] denies every tool with a 'skills only' message", () => {
+  const wf = workflow("so")
+  const a = wf.skill("a", { allowedTools: [] })
+  wf.root(a)
+  const sg = wf.toJSON()
+  const r = decide(sg, initialState(sg, LEAD), toolEv("Bash"), probe())
+  assert.equal(r.action, "deny")
+  assert.match(r.reason, /allowed: \(skills only\)/)
+})
+
+test("legalNext lists back-edge targets (and skips guard-false edges) in a deny reason", () => {
+  // From active [verify], an illegal jump to a real-but-unreachable node ("scope") triggers the
+  // deny+guidance path. Guidance includes the loop targets (back-edges bypass the join check) while
+  // the guarded verify→ship edge is omitted when its guard is false. (An UNKNOWN skill is instead
+  // waved through as "no opinion", so the target must be a real graph node with no edge from here.)
+  const r = decide(l, atVerify(), skillEv("scope"), probe())
+  assert.equal(r.action, "deny")
+  assert.match(r.reason, /legal next:/)
+  assert.match(r.reason, /impl/)
+  assert.match(r.reason, /plan/)
+  assert.doesNotMatch(r.reason, /ship/) // guard false → not offered
+})
+
+test("forward transition is blocked when the source's done_when is not yet satisfied", () => {
+  // At [plan] with plan.md absent, plan cannot complete, so impl's join over [plan] stays unmet.
+  const st = { workflow: "L", leadSessionId: LEAD, active: ["plan"], completed: ["scope", "ctx"], loops: {}, overrides: [] }
+  const r = decide(l, st, skillEv("impl"), probe({ doneWhen: { plan: false } }))
+  assert.equal(r.action, "deny")
+  assert.match(r.reason, /"impl" waits on: plan/)
+})
+
+test("override with no target just logs (no frontier change) and records a timestamp", () => {
+  const st = initialState(g, LEAD)
+  const r = decide(g, { ...st, _now: undefined }, { ...skillEv(OVERRIDE_SKILL), _now: "2026-06-30T00:00:00Z" }, probe())
+  assert.equal(r.action, "allow")
+  assert.equal(r.next.overrides[0].to, null)
+  assert.equal(r.next.overrides[0].ts, "2026-06-30T00:00:00Z")
+  assert.deepEqual(r.next.active, ["a"]) // unchanged
+})
+
+test("override to an unknown node logs but does not move the frontier", () => {
+  const r = decide(g, initialState(g, LEAD), skillEv(OVERRIDE_SKILL, { to: "ghost" }), probe())
+  assert.equal(r.action, "allow")
+  assert.equal(r.next.overrides[0].to, "ghost")
+  assert.ok(!r.next.active.includes("ghost"))
+})
+
+// ---- boundary branches ----
+
+test("joinSatisfied: any vs all semantics, and a parentless node is vacuously satisfied", () => {
+  assert.equal(joinSatisfied("all", ["p", "q"], ["p"]), false)
+  assert.equal(joinSatisfied("all", ["p", "q"], ["p", "q"]), true)
+  assert.equal(joinSatisfied("any", ["p", "q"], ["p"]), true) // any: one parent suffices
+  assert.equal(joinSatisfied("any", ["p", "q"], []), false)
+  assert.equal(joinSatisfied("all", [], []), true) // no parents → satisfied
+  assert.equal(joinSatisfied("any", [], []), true)
+})
+
+test("an 'any' join unlocks as soon as ONE parent completes", () => {
+  const wf = workflow("any-join")
+  const p = wf.skill("p"), q = wf.skill("q"), d = wf.skill("d", { join: "any" })
+  d.after(p, q)
+  wf.root(p)
+  const sg = wf.toJSON()
+  // Active at [p, q] with neither done; entering d completes p, which satisfies the ANY join.
+  const st = { workflow: "any-join", leadSessionId: LEAD, active: ["p", "q"], completed: [], loops: {}, overrides: [] }
+  assert.equal(decide(sg, st, skillEv("d"), probe()).action, "allow")
+})
+
+test("a Skill call with no toolInput at all is handled (skillTarget defaults the input to {})", () => {
+  // No state + a Skill event missing toolInput → skillTarget reads `ev.toolInput || {}`, finds no
+  // target, and decide gives no opinion (next stays null).
+  const r = decide(g, null, { toolName: "Skill" }, probe())
+  assert.equal(r.action, "allow")
+  assert.equal(r.next, null)
+})
+
+test("a Skill call with neither skill nor name resolves to no target", () => {
+  // skillTarget falls through to null; with active [a] (allows only AskUserQuestion) the bare
+  // 'Skill' tool name itself is then gated and denied — proving target resolution returned null.
+  const r = decide(g, initialState(g, LEAD), { toolName: "Skill", toolInput: {} }, probe())
+  assert.equal(r.action, "deny")
+})
+
+test("deny guidance reads '(none)' when there is no active node to move from", () => {
+  const st = { ...initialState(g, LEAD), active: [] }
+  const r = decide(g, st, skillEv("b"), probe())
+  assert.equal(r.action, "deny")
+  assert.match(r.reason, /legal next: \(none\)/)
+})
+
+test("real loop: a loop policy without an explicit max defaults the cap to 5", () => {
+  const wf = workflow("LD")
+  const impl = wf.skill("impl")
+  const verify = wf.skill("verify", { loop: { noProgress: true } }) // no max
+  impl.then(verify)
+  verify.loopTo(impl)
+  wf.root(impl)
+  const sg = wf.toJSON()
+  const st = { workflow: "LD", leadSessionId: LEAD, active: ["verify"], completed: ["impl"], loops: {}, overrides: [] }
+  const r = decide(sg, st, skillEv("impl"), probe({ signature: "z" }))
+  assert.equal(r.action, "allow")
+  assert.equal(r.next.loops.verify.maxIter, 5) // defaulted
+})
+
+test("real loop: a back-edge with no probe signature records a null fingerprint", () => {
+  const r = decide(l, atVerify(), skillEv("impl"), probe()) // probe() supplies no signature
+  assert.equal(r.action, "allow")
+  assert.equal(r.next.loops.verify.history[0].signature, null)
 })

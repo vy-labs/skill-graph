@@ -14,7 +14,6 @@ export const all = (...ps) => ({ kind: "all", ps })
 export const any = (...ps) => ({ kind: "any", ps })
 
 const nameOf = (h) => (typeof h === "string" ? h : h.name)
-const uniqPush = (arr, v) => (arr.includes(v) ? arr : (arr.push(v), arr))
 
 export function workflow(name) {
   return new Workflow(name)
@@ -94,5 +93,3 @@ class Handle {
     return this
   }
 }
-
-export { uniqPush }

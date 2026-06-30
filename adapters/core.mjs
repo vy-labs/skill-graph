@@ -122,7 +122,9 @@ export async function loadGraphs(cwd, env = process.env) {
 
 export function branchKey(cwd) {
   try {
-    return execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().replace(/[^\w.-]/g, "_") || "detached"
+    // A repo with commits yields a branch name, or "HEAD" when detached; a commit-less repo (or no
+    // git) throws and falls through to "no-git". So the trimmed result is always non-empty here.
+    return execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().replace(/[^\w.-]/g, "_")
   } catch {
     return "no-git"
   }
@@ -156,10 +158,11 @@ export async function runGovernor({ event, toolName, toolInput, cwd, sessionId }
   const graph = selectWorkflow(graphs, state, ev)
   if (!graph) return { action: "allow" }
 
-  if (event === "SessionStart") {
-    if (state) return { action: "context", context: `# skill-graph workflow: ${graph.name}\nActive: ${state.active.join(", ")}. Completed: ${state.completed.join(", ") || "(none)"}.` }
-    return { action: "allow" }
-  }
+  // SessionStart carries no tool call, so selectWorkflow can only have returned a graph via an
+  // already-persisted run (the root-skill path requires toolName === "Skill"). state is therefore
+  // non-null here — surface the active run as resume context.
+  if (event === "SessionStart")
+    return { action: "context", context: `# skill-graph workflow: ${graph.name}\nActive: ${state.active.join(", ")}. Completed: ${state.completed.join(", ") || "(none)"}.` }
 
   const isSkill = toolName === "Skill"
   const sigFile = join(cwd, WORKFLOW_DIR, ".signature")

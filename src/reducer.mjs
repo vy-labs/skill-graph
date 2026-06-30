@@ -29,7 +29,7 @@ function downstream(graph, start) {
   return seen
 }
 
-function joinSatisfied(join, parents, completed) {
+export function joinSatisfied(join, parents, completed) {
   if (parents.length === 0) return true
   return join === "any" ? parents.some((p) => completed.includes(p)) : parents.every((p) => completed.includes(p))
 }
