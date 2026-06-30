@@ -49,7 +49,7 @@ lives in the [examples](../examples).
 
 | opt | meaning |
 |---|---|
-| `allowedTools` | `null` (default) means unrestricted. `[]` means skills only, no direct tools. `[…]` means only these tools are allowed for the lead's direct calls at this node. |
+| `allowedTools` | `null` (default) means unrestricted. `[]` means skills only, no direct tools. `[…]` means only these tools are allowed for the lead's direct calls at this node. An entry may use `*` as a tool-name glob — `"mcp__*"` permits every MCP tool without listing them; an entry with no `*` is an exact match. |
 | `doneWhen` | a predicate that must hold for the node to count as complete (it gates the joins of its successors). Omit it and the node completes when the agent legally moves on. |
 | `join` | `"all"` (default) or `"any"`. For a node with several parents, complete all of them, or at least one, before it unlocks. |
 | `loop` | `{ max, noProgress }`. When set, this node's back edges (`loopTo`) draw on the loop guard (see Loops). |
@@ -78,6 +78,9 @@ is an array of `{ tool, paths? }`:
 
 Calling `allowAlways` more than once appends. It serialises as `graph.allowAlways` (default `[]`, so
 existing workflows are unchanged). **The globs are the host's choice — the engine ships none.**
+
+`tool` is itself a name pattern: a `*` globs a family (`"mcp__*"` grants every MCP tool), and a name
+with no `*` is an exact match. A tool-name glob composes with the path globs — both must match.
 
 ```js
 wf.allowAlways([

@@ -121,7 +121,8 @@ Details in [`docs/dsl.md`](./docs/dsl.md#visualizing).
 ## How it works
 
 A node is a skill the agent invokes, named by its skill id. `allowedTools` limits the lead agent's
-direct tools at that node, while subagents it delegates to run freely. A node finishes when its
+direct tools at that node (entries may use a `*` glob, e.g. `"mcp__*"` for every MCP tool), while
+subagents it delegates to run freely. A node finishes when its
 `doneWhen` predicate holds (a file exists, a command passes, or a marker is written), or when the agent
 moves on if it has no predicate. A node with more parents unlocks once its join is satisfied.
 

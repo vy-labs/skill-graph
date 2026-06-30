@@ -28,15 +28,26 @@ export function matchGlob(glob, path) {
   return new RegExp(`(^|/)${re}$`).test(path)
 }
 
+// Pure match of a tool-name PATTERN against a tool name. A pattern with no `*` is a literal exact
+// match (full back-compat — no accidental substring/prefix matching). A `*` expands to ".*", so e.g.
+// "mcp__*" allows a whole family of tools without enumerating them. Tool names have no `/`, so a plain
+// `*` spanning the rest of the name is enough; no segment semantics. No IO.
+export function matchTool(pattern, name) {
+  if (!pattern.includes("*")) return pattern === name
+  const re = pattern.replace(/[.+^${}()|[\]\\?]/g, "\\$&").replace(/\*/g, ".*")
+  return new RegExp(`^${re}$`).test(name)
+}
+
 // The path a tool call targets, across the field names different harnesses use. null when none.
 const toolPath = (toolInput) => toolInput?.file_path ?? toolInput?.path ?? toolInput?.filePath ?? null
 
 // Does a workflow-level allowAlways rule grant this tool call? An unscoped rule (no paths) allows the
-// tool everywhere; a path-scoped rule allows it only when the call's target path matches a glob.
+// tool everywhere; a path-scoped rule allows it only when the call's target path matches a glob. The
+// rule's `tool` is itself a name pattern, so "mcp__*" grants a whole family.
 function allowAlwaysGrants(graph, toolName, toolInput) {
   const path = toolPath(toolInput)
   for (const rule of graph.allowAlways ?? []) {
-    if (rule.tool !== toolName) continue
+    if (!matchTool(rule.tool, toolName)) continue
     if (!rule.paths) return true // unscoped → allowed at every node
     if (path && rule.paths.some((g) => matchGlob(g, path))) return true
   }
@@ -232,7 +243,7 @@ function decideTool(graph, state, toolName, toolInput) {
   if (allowAlwaysGrants(graph, toolName, toolInput)) return { action: "allow", next: state }
   const restricted = state.active.map((n) => graph.nodes[n]).filter((n) => n && n.allowedTools !== null)
   if (restricted.length === 0) return { action: "allow", next: state } // no active node restricts → open
-  if (restricted.every((n) => n.allowedTools.includes(toolName))) return { action: "allow", next: state }
+  if (restricted.every((n) => n.allowedTools.some((t) => matchTool(t, toolName)))) return { action: "allow", next: state }
   const allowed = uniq(restricted.flatMap((n) => n.allowedTools))
   return deny(state, `"${toolName}" not permitted at [${state.active.join(", ")}]. allowed: ${allowed.join(", ") || "(skills only)"}`, { allowedTools: allowed })
 }

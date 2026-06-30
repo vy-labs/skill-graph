@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { workflow, fileExists, shell, marker } from "../src/graph.mjs"
-import { decide, initialState, edgeKey, joinSatisfied, matchGlob, OVERRIDE_SKILL } from "../src/reducer.mjs"
+import { decide, initialState, edgeKey, joinSatisfied, matchGlob, matchTool, OVERRIDE_SKILL } from "../src/reducer.mjs"
 
 const LEAD = "sess-lead"
 const probe = (over = {}) => ({ sessionId: LEAD, doneWhen: {}, guards: {}, ...over })
@@ -404,4 +404,62 @@ test("reducer tolerates a graph with no allowAlways field (older serialization)"
   delete g.allowAlways // simulate a graph serialized before the feature existed
   const st = initialState(g, LEAD)
   assert.equal(decide(g, st, toolEvP("Bash", {}), probe()).action, "deny") // node gating still applies
+})
+
+// ---- tool-name glob matching ----
+
+test("matchTool: literal is exact; * globs a family; * alone matches anything", () => {
+  // family glob
+  assert.equal(matchTool("mcp__*", "mcp__foo__bar"), true)
+  assert.equal(matchTool("mcp__*", "mcp__a_b__c-d"), true)
+  assert.equal(matchTool("mcp__*", "Bash"), false)
+  assert.equal(matchTool("mcp__*", "MyMcpTool"), false) // must start with mcp__
+  // literal — exact only, no accidental substring/prefix
+  assert.equal(matchTool("Bash", "Bash"), true)
+  assert.equal(matchTool("Bash", "Bashful"), false)
+  assert.equal(matchTool("Bash", "xBash"), false)
+  // bare star
+  assert.equal(matchTool("*", "anything_at_all"), true)
+})
+
+test("node allowedTools: a tool-name glob permits a family; non-matches still denied", () => {
+  const wf = workflow("tg")
+  wf.skill("a", { allowedTools: ["Read", "mcp__*"] })
+  wf.root("a")
+  const g = wf.toJSON()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Read", {}), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("mcp__github__create_issue", {}), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("Bash", {}), probe()).action, "deny")
+})
+
+test("allowAlways: an unscoped tool-name glob grants a family at a node that doesn't list it", () => {
+  const wf = workflow("tg2")
+  wf.skill("a", { allowedTools: ["Read"] }) // does NOT list any mcp tool
+  wf.root("a")
+  wf.allowAlways([{ tool: "mcp__*" }])
+  const g = wf.toJSON()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("mcp__foo__bar", {}), probe()).action, "allow")
+})
+
+test("allowAlways: without an mcp rule, a node limited to [Read] still denies an mcp tool", () => {
+  const wf = workflow("tg3")
+  wf.skill("a", { allowedTools: ["Read"] })
+  wf.root("a")
+  const g = wf.toJSON()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("mcp__foo__bar", {}), probe()).action, "deny")
+})
+
+test("allowAlways: a tool-name glob composes with the path glob (both must match)", () => {
+  const wf = workflow("tg4")
+  wf.skill("a", { allowedTools: ["AskUserQuestion"] })
+  wf.root("a")
+  wf.allowAlways([{ tool: "mcp__fs__*", paths: [".myhost/**"] }])
+  const g = wf.toJSON()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("mcp__fs__write", { file_path: ".myhost/x" }), probe()).action, "allow") // tool glob + path glob
+  assert.equal(decide(g, st, toolEvP("mcp__fs__write", { file_path: "src/x" }), probe()).action, "deny") // path glob fails
+  assert.equal(decide(g, st, toolEvP("mcp__net__get", { file_path: ".myhost/x" }), probe()).action, "deny") // tool glob fails
 })
