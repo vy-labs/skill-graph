@@ -1,0 +1,20 @@
+{
+  "//": "Codex hook config. Codex mirrors Claude Code's hook structure but passes the event name as an argument. Place this where your Codex version reads hooks (see Codex docs); adjust the path to the installed package. TOOL_MAP in adapters/codex.mjs translates Codex tool ids to the canonical names your workflow uses.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node node_modules/skill-graph/adapters/codex.mjs SessionStart" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node node_modules/skill-graph/adapters/codex.mjs PreToolUse" }
+        ]
+      }
+    ]
+  }
+}

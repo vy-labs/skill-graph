@@ -1,0 +1,98 @@
+// Skill-graph DSL. Builds a serializable workflow graph that the pure reducer (reducer.mjs) consumes
+// and the Mermaid renderer (mermaid.mjs) draws. No IO, no model — just data construction.
+//
+// See docs/specs/2026-06-29-skill-graph-workflow-framework.md for the design.
+
+// ---- predicate descriptors --------------------------------------------------------------------
+// Opaque to the reducer: the hook adapter evaluates them and passes booleans in via `probe`. Here
+// they are just data, so the graph (and its Mermaid) stay pure and serializable.
+export const fileExists = (glob) => ({ kind: "fileExists", glob })
+export const shell = (cmd, { fails = false } = {}) => ({ kind: "shell", cmd, fails })
+export const marker = (name) => ({ kind: "marker", name })
+export const not = (p) => ({ kind: "not", p })
+export const all = (...ps) => ({ kind: "all", ps })
+export const any = (...ps) => ({ kind: "any", ps })
+
+const nameOf = (h) => (typeof h === "string" ? h : h.name)
+const uniqPush = (arr, v) => (arr.includes(v) ? arr : (arr.push(v), arr))
+
+export function workflow(name) {
+  return new Workflow(name)
+}
+
+class Workflow {
+  constructor(name) {
+    this.name = name
+    this._root = null
+    this.nodes = new Map() // name -> { name, allowedTools, doneWhen, join }
+    this.edges = [] // { from, to, when, max, fork }
+  }
+
+  // allowedTools: null = unrestricted; [] = skills only (no direct tools); [..] = only those.
+  // loop: { max, noProgress } — when set, this node's back-edges draw on the real loop guard
+  //   (max-iter + same-signature no-progress) instead of a simple per-edge counter.
+  skill(name, opts = {}) {
+    if (this.nodes.has(name)) throw new Error(`duplicate skill node: ${name}`)
+    this.nodes.set(name, {
+      name,
+      allowedTools: opts.allowedTools ?? null,
+      doneWhen: opts.doneWhen ?? null,
+      join: opts.join ?? "all",
+      loop: opts.loop ?? null,
+    })
+    return new Handle(this, name)
+  }
+
+  root(handle) {
+    this._root = nameOf(handle)
+    return this
+  }
+
+  _edge(from, to, opts = {}) {
+    // A back-edge (a loop) is flagged with `back`, or implied by a per-edge `max` cap.
+    this.edges.push({ from, to, when: opts.when ?? null, max: opts.max ?? null, fork: !!opts.fork, back: !!opts.back || opts.max != null })
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      root: this._root,
+      nodes: Object.fromEntries(this.nodes),
+      edges: this.edges,
+    }
+  }
+}
+
+class Handle {
+  constructor(wf, name) {
+    this.wf = wf
+    this.name = name
+  }
+  // unguarded sequential edge(s) to children
+  then(...children) {
+    for (const c of children) this.wf._edge(this.name, nameOf(c))
+    return this
+  }
+  // edges to children PLUS a parallel-dispatch hint (the join downstream enforces the order)
+  fork(...children) {
+    for (const c of children) this.wf._edge(this.name, nameOf(c), { fork: true })
+    return this
+  }
+  // declare this node a join over the given parents (sugar for parent->this edges)
+  after(...parents) {
+    for (const p of parents) this.wf._edge(nameOf(p), this.name)
+    return this
+  }
+  // explicit edge with an optional guard (`when`) and/or loop cap (`max`, marks a back-edge)
+  edge(target, opts = {}) {
+    this.wf._edge(this.name, nameOf(target), opts)
+    return this
+  }
+  // a back-edge (loop) to an earlier node; the source node's `loop` policy governs the budget
+  loopTo(target, opts = {}) {
+    this.wf._edge(this.name, nameOf(target), { ...opts, back: true })
+    return this
+  }
+}
+
+export { uniqPush }

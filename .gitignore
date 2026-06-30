@@ -1,0 +1,4 @@
+node_modules/
+.skill-graph/.state/
+.skill-graph/.signature
+*.log

@@ -1,0 +1,20 @@
+{
+  "//": "Merge this into .claude/settings.json (project) or ~/.claude/settings.json (global). Adjust the path if skill-graph isn't at the project root's node_modules.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node node_modules/skill-graph/adapters/claude-code.mjs" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node node_modules/skill-graph/adapters/claude-code.mjs" }
+        ]
+      }
+    ]
+  }
+}

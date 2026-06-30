@@ -1,0 +1,26 @@
+{
+  "name": "skill-graph",
+  "version": "0.1.0",
+  "description": "Workflow automation for AI coding agents — define agent workflows as a directed graph of skill-nodes and enforce them deterministically as a session governor. n8n-style flows for Claude Code, Codex, and more.",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./adapters/claude-code": "./adapters/claude-code.mjs",
+    "./adapters/codex": "./adapters/codex.mjs",
+    "./adapters/core": "./adapters/core.mjs"
+  },
+  "bin": {
+    "skill-graph-claude": "adapters/claude-code.mjs",
+    "skill-graph-codex": "adapters/codex.mjs"
+  },
+  "files": ["src", "adapters", "docs", "examples", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": ["workflow", "state-machine", "agent", "dag", "claude-code", "codex", "governor", "ai-agents", "automation"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/vy-labs/skill-graph.git" },
+  "engines": { "node": ">=18" },
+  "sideEffects": false
+}
