@@ -130,25 +130,32 @@ Details in [`docs/dsl.md`](./docs/dsl.md#visualizing).
 
 ## How it works
 
-A node is a skill the agent invokes, named by its skill id. `allowedTools` limits the lead agent's
-direct tools at that node (entries may use a `*` glob, e.g. `"mcp__*"` for every MCP tool), while
-subagents it delegates to run freely. A node finishes when its
-`doneWhen` predicate holds (a file exists, a command passes, or a marker is written), or when the agent
-moves on if it has no predicate. A node with more parents unlocks once its join is satisfied.
+**The loop.** The `PreToolUse` hook fires on every tool call and runs a pure reducer (`decide()`) that
+returns allow or deny. It reads where the agent is (the active node or nodes) and what it is calling, then:
 
-`wf.allowAlways(rules)` adds tools that are permitted at *every* node — either outright or only for
-file paths matching globs you supply (e.g. let the host write its own state files anywhere without
-opening `Write` wholesale). The globs are yours; the engine ships none. See [docs/dsl.md](./docs/dsl.md#wfallowalwaysrules--tools-permitted-at-every-node).
+- allows tools the active node permits and denies the rest, with a reason and the legal next steps;
+- completes a node when its `doneWhen` holds, and advances the frontier;
+- holds a join until its required parents finish;
+- counts loop back-edges and stops a loop at its cap.
 
-Edges carry optional guards for branching, and `loopTo` builds a back edge governed by the node's loop
-policy. The loop policy stops on a maximum count, and stops early when two iterations report the same
-failure, so a stuck loop never spins.
+Same input, same decision, every time. Run state is persisted per git branch under `.skill-graph/.state/`.
 
-The governor runs on every tool call. It blocks calls that leave the graph and allows the rest. Run
-state is keyed by git branch under `.skill-graph/.state`. When reality diverges from the plan, the
-agent can invoke `Skill("workflow:override", { to: "<node>" })`, which is always allowed and recorded.
+**The pieces** (full reference in [docs/dsl.md](./docs/dsl.md)):
 
-Full reference: [docs/dsl.md](./docs/dsl.md). Hands on guide: [docs/guide.md](./docs/guide.md).
+- **Node**: a skill the agent invokes. `allowedTools` limits its direct tools (globs allowed, e.g.
+  `"mcp__*"` for every MCP tool); subagents it delegates to run unrestricted.
+- **doneWhen**: a predicate (a file exists, a command passes, a marker is written) that completes a
+  node. Without one, the node completes when the agent moves on.
+- **Edge / guard**: a transition between nodes, optionally gated by a `when` condition for branching.
+- **Join**: a node with several parents opens once its join (`all` or `any`) is satisfied.
+- **Loop**: `loopTo` adds a back-edge; the loop policy stops at a max count, and early when two
+  iterations report the same failure, so a stuck loop never spins.
+- **allowAlways**: `wf.allowAlways(rules)` permits tools at *every* node, either outright or only for
+  file paths matching globs you supply. The globs are yours; the engine ships none.
+- **Override**: `Skill("workflow:override", { to: "<node>" })` is always allowed and recorded, for when
+  reality diverges from the plan.
+
+Full reference: [docs/dsl.md](./docs/dsl.md). Hands-on guide: [docs/guide.md](./docs/guide.md).
 
 ## Harness support
 
