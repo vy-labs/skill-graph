@@ -2,9 +2,9 @@
 
 # skill-graph
 
-### Deterministic, n8n style workflows for AI coding agents
+### Deterministic workflows your AI coding agent can't ignore
 
-Wire your agent's work as a graph of skills, then let a hook enforce it while the agent runs.
+Wire the work as a graph of skills, then let a hook enforce it at every step while the agent runs.
 
 </div>
 
