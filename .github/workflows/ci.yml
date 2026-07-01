@@ -1,0 +1,25 @@
+name: CI
+
+# Run the deterministic test suite on every PR and on pushes to master.
+# Note: `npm test` runs only the unit + integration tests (node --test over test/*.test.mjs).
+# The live e2e suite (e2e/, `npm run test:e2e`) is intentionally NOT run here — it drives a real
+# `claude` process and needs a model + auth, so it can't run in CI.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18.x', '20.x', '22.x'] # package.json engines: node >=18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # No dependencies to install (zero deps, no lockfile) — the suite uses only Node built-ins.
+      - run: npm test
