@@ -1,7 +1,7 @@
 {
   "name": "skill-graph",
   "version": "0.4.0",
-  "description": "Workflow automation for AI coding agents — define agent workflows as a directed graph of skill-nodes and enforce them deterministically as a session governor. n8n-style flows for Claude Code, Codex, and more.",
+  "description": "Deterministic workflows your AI coding agent can't ignore. Wire the work as a graph of skills; a hook enforces order, tool permissions, joins, and loops at every step. Works with Claude Code and Codex.",
   "type": "module",
   "main": "src/index.mjs",
   "exports": {
