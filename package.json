@@ -1,6 +1,6 @@
 {
   "name": "skill-graph",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "Deterministic workflows your AI coding agent can't ignore. Wire the work as a graph of skills; a hook enforces order, tool permissions, joins, and loops at every step. Works with Claude Code and Codex.",
   "type": "module",
   "main": "src/index.mjs",
@@ -19,7 +19,8 @@
   "files": ["src", "adapters", "bin", "docs", "examples", "README.md", "LICENSE"],
   "scripts": {
     "test": "node --test",
-    "test:e2e": "node e2e/run.mjs"
+    "test:e2e": "node e2e/run.mjs",
+    "test:e2e:codex": "node e2e/codex-run.mjs"
   },
   "keywords": ["workflow", "state-machine", "agent", "dag", "claude-code", "codex", "governor", "ai-agents", "automation"],
   "license": "MIT",

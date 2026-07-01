@@ -161,8 +161,8 @@ Full reference: [docs/dsl.md](./docs/dsl.md). Hands-on guide: [docs/guide.md](./
 
 | Harness | Adapter | Status |
 |---|---|---|
-| Claude Code | `adapters/claude-code.mjs` | supported |
-| Codex | `adapters/codex.mjs` | supported. Confirm the hook config path for your version. |
+| Claude Code | `adapters/claude-code.mjs` | supported (skills are tool calls, so transitions are automatic) |
+| Codex | `adapters/codex.mjs` | supported via a sentinel node-entry command (`: skill-graph enter <node>`), since Codex skills are context, not tool calls. See [`examples/codex`](./examples/codex). |
 | Gemini, Cursor, Copilot, others | add a short adapter over the shared core | open |
 
 ## License

@@ -1,9 +1,10 @@
 # skill-graph live e2e
 
-> Claude Code only, for now. The e2e driver spawns the `claude` CLI and wires the Claude hook. The
-> scenarios and their assertions are harness-neutral (they judge the governor's decision log, which is
-> identical across harnesses), so a Codex driver can be added later. See [Other
-> harnesses](#other-harnesses). It is not wired for Codex yet.
+> Two harnesses. **Claude Code** runs *live* (`npm run test:e2e`): a real `claude` process driven
+> through the workflow. **Codex** runs *deterministic* (`npm run test:e2e:codex`): a replay of
+> codex-shaped hook events through the real Codex adapter — because Codex skills are injected context,
+> not tool calls, so a live `codex exec` can't drive skill transitions (see [Codex](#codex)). Both
+> judge the same governor decision log with the same scenario checks.
 
 A live, end-to-end test. It drives a real headless `claude` process through a governed sample workflow
 and checks that the hook enforces the graph. It covers the pass flow (legal steps are allowed) and the
@@ -73,16 +74,24 @@ Drop a `scenarios/<name>.mjs` default-exporting `{ name, intent, prompt, check(e
 are the parsed decision-log lines (`{ event, tool, target, path, action, reason, active, completed }`).
 Helpers live in `lib/assert.mjs`. Return `verdict(PASS|FAIL|INCONCLUSIVE, detail)`.
 
-## Other harnesses
+## Codex
 
-Only Claude Code is wired up today. The scenarios and their `check()`s are already harness-neutral;
-they assert on the governor decision log, which is identical across harnesses. Only the driver is
-Claude-specific:
+Run with `npm run test:e2e:codex` (or `node e2e/codex-run.mjs`). It reuses the same four scenarios and
+their `check()`s, but the driver differs, for a real reason:
 
-- `hook.mjs` imports the Claude adapter (`parseClaude`, `formatClaude`),
-- `lib/runClaude.mjs` spawns the `claude` CLI, and
-- `lib/sandbox.mjs` writes `.claude/settings.json`.
+- **Why deterministic, not live.** A Codex skill is *injected context, not a tool call*, so it fires no
+  hook — the governor has no skill event to start or advance a run on (Claude Code's skills *are* tool
+  calls, which is why its suite runs live). Codex hooks *do* fire for shell, so skill-graph signals node
+  entry with a sentinel command (`: skill-graph enter <node>`, see [`examples/codex`](../examples/codex))
+  that `parseCodex` rewrites into the canonical `Skill` event.
+- **What it exercises.** `e2e/codex-run.mjs` replays a codex-shaped journey (sentinel enters + real
+  `shell`/`apply_patch` events + file side effects) through the **real** Codex hook binary
+  (`e2e/hook.codex.mjs` → `parseCodex` → `codexGovern` → `formatCodex` → tee). So it proves the sentinel
+  translation, per-node tool gating (`shell`→`Bash`), joins, the marker-gated edge, and the loop cap —
+  the whole Codex path — without a live model.
+- **Live `codex exec`.** Not wired: it's slow, and (in probing) repo-level hook config didn't load in a
+  throwaway sandbox without project trust. Once the hook is wired where Codex loads it (global config or
+  a trusted project), a live run is possible; the deterministic suite is the reliable coverage today.
 
-Adding Codex is a second driver: a hook reusing `parseCodex` and `formatCodex` (already shipped in
-`adapters/codex.mjs`), a runner that spawns the Codex CLI, and sandbox wiring per
-`examples/codex/hooks.snippet.json`. The four scenarios carry over unchanged.
+The translation is confined to `adapters/codex.mjs`; the reducer and the Claude adapter are untouched,
+so the live Claude suite is unaffected.
