@@ -1,6 +1,6 @@
 {
   "name": "skill-graph",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Deterministic workflows your AI coding agent can't ignore. Wire the work as a graph of skills; a hook enforces order, tool permissions, joins, and loops at every step. Works with Claude Code and Codex.",
   "type": "module",
   "main": "src/index.mjs",
@@ -11,6 +11,7 @@
     "./adapters/core": "./adapters/core.mjs"
   },
   "bin": {
+    "skill-graph": "bin/skill-graph.mjs",
     "skill-graph-claude": "adapters/claude-code.mjs",
     "skill-graph-codex": "adapters/codex.mjs",
     "skill-graph-mermaid": "bin/mermaid.mjs"

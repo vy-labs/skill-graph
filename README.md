@@ -82,9 +82,18 @@ explicit and binding.
 
 ```bash
 npm install github:vy-labs/skill-graph
+npx skill-graph init
 ```
 
+`skill-graph init` wires the hook for you and scaffolds a starter workflow. It asks for the harness and
+scope in a terminal, or takes them as flags: `--scope project|global` (global by default),
+`--harness claude|codex`, `--session-start` to add the optional resume hook. Preview without touching
+anything using `--print` (shows the settings snippet) or `--dry-run` (shows what it would write). Undo
+with `skill-graph uninstall`.
+
 ## Quickstart for Claude Code
+
+`npx skill-graph init` does steps 2 and 3 below. To wire it by hand instead:
 
 1. Install the package.
 2. Add the hook to `.claude/settings.json` (full snippet in [`examples/claude-code`](./examples/claude-code)):
@@ -99,7 +108,8 @@ npm install github:vy-labs/skill-graph
 3. Write a workflow at `.skill-graph/your.workflow.mjs` that default exports a `workflow()`.
 4. Start the agent. The run begins when it enters the root skill, and the governor takes over.
 
-Codex setup follows the same shape. See [`examples/codex`](./examples/codex).
+Codex setup follows the same shape (`npx skill-graph init --harness codex --print`). See
+[`examples/codex`](./examples/codex).
 
 ## Visualize
 
