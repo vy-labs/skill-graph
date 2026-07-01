@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Live eval runner. For each scenario: build a fresh sandbox with the hook wired the real way, drive a
+// Live e2e runner. For each scenario: build a fresh sandbox with the hook wired the real way, drive a
 // REAL headless `claude` process through it, then judge the run from the governor's decision log.
 //
-//   node eval/run.mjs                 # all scenarios
-//   node eval/run.mjs loop-cap        # only scenarios whose file/name matches an arg
-//   EVAL_MODEL=sonnet node eval/run.mjs
-//   SG_KEEP=1 node eval/run.mjs       # keep sandboxes for inspection (prints their paths)
+//   node e2e/run.mjs                 # all scenarios
+//   node e2e/run.mjs loop-cap        # only scenarios whose file/name matches an arg
+//   E2E_MODEL=sonnet node e2e/run.mjs
+//   SG_KEEP=1 node e2e/run.mjs       # keep sandboxes for inspection (prints their paths)
 //
 // Exit code: 0 only if every selected scenario PASSed. FAIL (governor misbehaved) and INCONCLUSIVE
 // (agent never exercised the check) both exit non-zero, so a green run is unambiguous.
@@ -36,7 +36,7 @@ if (files.length === 0) {
 const glyph = { [PASS]: "✓", [FAIL]: "✗", [INCONCLUSIVE]: "•" }
 const results = []
 
-console.log(`\nskill-graph live eval — model=${process.env.EVAL_MODEL || "haiku"}, ${files.length} scenario(s)\n`)
+console.log(`\nskill-graph live e2e, model=${process.env.E2E_MODEL || "haiku"}, ${files.length} scenario(s)\n`)
 
 for (const file of files) {
   const scenario = (await import(pathToFileURL(join(SCEN_DIR, file)).href)).default

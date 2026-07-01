@@ -1,5 +1,5 @@
 // Builds a throwaway sandbox project that wires the skill-graph hook the REAL way a Claude Code user
-// would: a project .claude/settings.json whose PreToolUse + SessionStart hooks point at the eval hook,
+// would: a project .claude/settings.json whose PreToolUse + SessionStart hooks point at the e2e hook,
 // the sample skills under .claude/skills/, and the sample workflow under .skill-graph/. Each scenario
 // gets its own fresh sandbox so runs never share governor state.
 
@@ -9,13 +9,13 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const EVAL_ROOT = dirname(HERE) // .../eval
-const FIXTURES = join(EVAL_ROOT, "fixtures")
-const HOOK = join(EVAL_ROOT, "hook.mjs")
+const E2E_ROOT = dirname(HERE) // .../e2e
+const FIXTURES = join(E2E_ROOT, "fixtures")
+const HOOK = join(E2E_ROOT, "hook.mjs")
 
 /** Create a sandbox project. Returns { dir, logPath }. */
 export function makeSandbox() {
-  const dir = mkdtempSync(join(tmpdir(), "sg-eval-"))
+  const dir = mkdtempSync(join(tmpdir(), "sg-e2e-"))
 
   // Sample workflow.
   mkdirSync(join(dir, ".skill-graph"), { recursive: true })
@@ -30,7 +30,7 @@ export function makeSandbox() {
   // A file for the agent to research.
   copyFileSync(join(FIXTURES, "README.md"), join(dir, "README.md"))
 
-  // Hook wiring — the real contract from the top-level README, pointed at eval/hook.mjs (absolute).
+  // Hook wiring — the real contract from the top-level README, pointed at e2e/hook.mjs (absolute).
   const hookCmd = `node ${JSON.stringify(HOOK).slice(1, -1)}`
   const settings = {
     hooks: {
@@ -41,5 +41,5 @@ export function makeSandbox() {
   mkdirSync(join(dir, ".claude"), { recursive: true })
   writeFileSync(join(dir, ".claude", "settings.json"), JSON.stringify(settings, null, 2))
 
-  return { dir, logPath: join(dir, ".skill-graph", "eval-log.jsonl") }
+  return { dir, logPath: join(dir, ".skill-graph", "decisions.jsonl") }
 }

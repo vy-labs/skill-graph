@@ -1,4 +1,4 @@
-// Minimal sample workflow for the LIVE eval (see eval/README.md). Factory form so it loads with no
+// Minimal sample workflow for the LIVE e2e (see e2e/README.md). Factory form so it loads with no
 // "skill-graph" import — the adapter injects the DSL. Four skill nodes with a bounded loop, chosen to
 // exercise every governor guarantee a real agent can hit in one short run:
 //

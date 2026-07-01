@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Faithful eval wrapper around the REAL Claude Code hook pipeline.
+// Faithful e2e wrapper around the REAL Claude Code hook pipeline.
 //
 // It runs the IDENTICAL parse → govern → format that adapters/claude-code.mjs runs as a live hook
 // (same functions, imported directly — no governor logic is duplicated here), and additionally TEES
-// every decision to a JSONL log. The eval then asserts on what the governor actually decided during a
+// every decision to a JSONL log. The e2e test then asserts on what the governor actually decided during a
 // real agent run, which is deterministic given the tool calls the agent made — independent of whatever
 // prose the model emits. The tee is the ONLY thing this file adds; remove it and it is the shipped hook.
 //
 // WHY a wrapper instead of the shipped adapter directly: the shipped adapter intentionally emits
 // nothing on "allow" (a hook must stay quiet), so a passing run leaves no trace to assert on. The log
-// gives the eval an observation surface without changing the adapter's behavior toward the agent.
+// gives the e2e test an observation surface without changing the adapter's behavior toward the agent.
 //
 // FAIL-OPEN like the real adapter: any error → emit nothing, exit 0, never break the agent session.
 
@@ -57,7 +57,7 @@ try {
       active: state?.active ?? null,
       completed: state?.completed ?? null,
     }
-    const logPath = process.env.SKILL_GRAPH_EVAL_LOG || join(ev.cwd, ".skill-graph", "eval-log.jsonl")
+    const logPath = process.env.SKILL_GRAPH_E2E_LOG || join(ev.cwd, ".skill-graph", "decisions.jsonl")
     mkdirSync(dirname(logPath), { recursive: true })
     appendFileSync(logPath, JSON.stringify(record) + "\n")
   } catch {

@@ -18,7 +18,7 @@
   "files": ["src", "adapters", "bin", "docs", "examples", "README.md", "LICENSE"],
   "scripts": {
     "test": "node --test",
-    "eval:live": "node eval/run.mjs"
+    "test:e2e": "node e2e/run.mjs"
   },
   "keywords": ["workflow", "state-machine", "agent", "dag", "claude-code", "codex", "governor", "ai-agents", "automation"],
   "license": "MIT",

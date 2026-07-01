@@ -1,16 +1,16 @@
 // Spawns a REAL headless `claude` process against a sandbox and returns the governor's decision log.
 //
 // The agent runs as its own top-level (lead) session — which matters: the governor only governs the
-// lead session (subagents pass through), so a live eval MUST drive a genuine claude process, not a
+// lead session (subagents pass through), so a live e2e test MUST drive a genuine claude process, not a
 // subagent. We pre-allow the tools the agent needs via --allowedTools so Claude Code's own permission
 // layer never interferes; that leaves the skill-graph hook as the sole governor of the run.
 
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 
-const MODEL = process.env.EVAL_MODEL || "haiku" // fast + cheap; override with EVAL_MODEL=sonnet etc.
+const MODEL = process.env.E2E_MODEL || "haiku" // fast + cheap; override with E2E_MODEL=sonnet etc.
 
-// Tools the eval agent may use. The skill-graph hook — not this list — decides what is allowed WHERE.
+// Tools the test agent may use. The skill-graph hook, not this list, decides what is allowed WHERE.
 const ALLOWED = ["Skill", "Read", "Grep", "Glob", "Write", "Edit", "Bash"]
 
 /** Run one scenario. Returns { entries, raw, status, stderr }. `entries` are the parsed JSONL log lines. */
@@ -31,7 +31,7 @@ export function runScenario({ dir, logPath, prompt }) {
   const res = spawnSync("claude", args, {
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, SKILL_GRAPH_EVAL_LOG: logPath },
+    env: { ...process.env, SKILL_GRAPH_E2E_LOG: logPath },
     maxBuffer: 32 * 1024 * 1024,
     timeout: 180_000,
   })

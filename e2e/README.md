@@ -1,22 +1,22 @@
-# skill-graph live eval
+# skill-graph live e2e
 
-> Claude Code only, for now. The eval driver spawns the `claude` CLI and wires the Claude hook. The
+> Claude Code only, for now. The e2e driver spawns the `claude` CLI and wires the Claude hook. The
 > scenarios and their assertions are harness-neutral (they judge the governor's decision log, which is
 > identical across harnesses), so a Codex driver can be added later. See [Other
 > harnesses](#other-harnesses). It is not wired for Codex yet.
 
-A live eval. It drives a real headless `claude` process through a governed sample workflow and checks
-that the hook enforces the graph. It covers the pass flow (legal steps are allowed) and the fail flows
-(illegal steps are blocked with the right reason), including the bounded loop guard.
+A live, end-to-end test. It drives a real headless `claude` process through a governed sample workflow
+and checks that the hook enforces the graph. It covers the pass flow (legal steps are allowed) and the
+fail flows (illegal steps are blocked with the right reason), including the bounded loop guard.
 
 `npm test` runs unit and integration tests over the engine and adapters. This runs the whole stack the
 way a user runs it: a real agent, a real `.claude/settings.json` hook, a real CLI.
 
 ```bash
-npm run eval:live               # all scenarios
-node eval/run.mjs loop-cap      # just the ones whose filename matches an arg
-EVAL_MODEL=sonnet npm run eval:live
-SG_KEEP=1 npm run eval:live     # keep each sandbox dir for inspection
+npm run test:e2e                # all scenarios
+node e2e/run.mjs loop-cap       # just the ones whose filename matches an arg
+E2E_MODEL=sonnet npm run test:e2e
+SG_KEEP=1 npm run test:e2e      # keep each sandbox dir for inspection
 ```
 
 Requires the `claude` CLI on PATH and working auth. It is not part of `npm test` or CI, because it
@@ -28,13 +28,13 @@ cost.
 For each scenario the runner:
 
 1. Builds a fresh sandbox (`lib/sandbox.mjs`): a temp project wired like a real install, with
-   `.claude/settings.json` (`PreToolUse` and `SessionStart` hooks pointing at the eval hook), the
+   `.claude/settings.json` (`PreToolUse` and `SessionStart` hooks pointing at the e2e hook), the
    sample skills under `.claude/skills/`, and the sample workflow under `.skill-graph/`.
 2. Drives a real `claude -p` process (`lib/runClaude.mjs`) with a scripted prompt. The agent runs as
    its own top-level (lead) session. This matters: the governor only governs the lead session, and a
-   subagent would pass through ungoverned. So a live eval must spawn a real `claude` process rather
+   subagent would pass through ungoverned. So a live e2e test must spawn a real `claude` process rather
    than delegate to a subagent.
-3. Judges the run from the governor's decision log, not from model output. The eval hook (`hook.mjs`)
+3. Judges the run from the governor's decision log, not from model output. The e2e hook (`hook.mjs`)
    is the shipped Claude adapter pipeline (`parseClaude`, `runGovernor`, `formatClaude`) plus one
    addition: it tees every decision to a JSONL log. Asserting on what the governor decided is
    deterministic given the agent's tool calls, so an off-script model does not make the verdict flaky.

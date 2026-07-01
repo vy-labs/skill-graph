@@ -1,4 +1,4 @@
-// Assertion helpers over the governor decision log (JSONL lines the eval hook tees). Every scenario
+// Assertion helpers over the governor decision log (JSONL lines the e2e hook tees). Every scenario
 // verdict is derived from what the governor DECIDED during the real run — deterministic given the tool
 // calls the agent made — so a wandering model can't make the verdict flaky.
 //
