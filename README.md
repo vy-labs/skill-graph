@@ -12,14 +12,14 @@ Wire the work as a graph of skills, then let a hook enforce it at every step whi
 
 ## What it is
 
-skill-graph lets you describe an agent workflow as a directed graph of skill nodes. A hook then runs
-that graph as a **session governor**. On every tool call it checks where the agent is and whether the
+skill-graph lets you describe an agent workflow as a directed graph of skill nodes. It runs as a
+**session governor**: on every tool call, a hook checks where the agent is in the graph and whether the
 call is allowed. It blocks anything that leaves the graph and tells the agent why. It holds parallel
 branches at a join, runs bounded loops, and draws the whole thing as a Mermaid diagram.
 
-Think of it as n8n for your coding harness. You design the flow once, and the run follows it. The
-difference from a prompt is that the rules are binding and the decisions are deterministic, decided by
-a pure function rather than the model's goodwill.
+Like n8n, you design the flow as a graph once. Unlike n8n, skill-graph doesn't run the steps; your
+agent does, and skill-graph enforces the graph while it works. The rules are binding and the decisions
+are deterministic, decided by a pure function rather than the model's goodwill.
 
 ## A workflow
 
