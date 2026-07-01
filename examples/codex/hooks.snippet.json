@@ -1,8 +1,9 @@
 {
-  "//": "Codex hook config. Codex mirrors Claude Code's hook structure but passes the event name as an argument. Place this where your Codex version reads hooks (see Codex docs); adjust the path to the installed package. TOOL_MAP in adapters/codex.mjs translates Codex tool ids to the canonical names your workflow uses.",
+  "//": "Codex hook config (matcher is a REGEX; use \".*\", not \"*\"). Each section bakes its event name into the command; the adapter also falls back to the payload's hook_event_name. Place where your Codex version reads hooks (~/.codex/hooks.json or [hooks] in config.toml, or the repo-level .codex/ for trusted projects); adjust the path to the installed package. TOOL_MAP in adapters/codex.mjs maps Codex tool ids to canonical names. Node entry uses the sentinel `: skill-graph enter <node>` (see README) since Codex skills aren't tool calls.",
   "hooks": {
     "SessionStart": [
       {
+        "matcher": ".*",
         "hooks": [
           { "type": "command", "command": "node node_modules/skill-graph/adapters/codex.mjs SessionStart" }
         ]
@@ -10,7 +11,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           { "type": "command", "command": "node node_modules/skill-graph/adapters/codex.mjs PreToolUse" }
         ]

@@ -1,7 +1,10 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { parseClaude, formatClaude, isEntry as isEntryClaude } from "../adapters/claude-code.mjs"
-import { parseCodex, formatCodex, isEntry as isEntryCodex } from "../adapters/codex.mjs"
+import { parseCodex, formatCodex, isEntry as isEntryCodex, codexGovern, CONVENTION } from "../adapters/codex.mjs"
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 test("claude adapter: parse snake_case payload → normalized event", () => {
   const n = parseClaude({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" }, cwd: "/p", session_id: "s1" })
@@ -79,4 +82,46 @@ test("isEntry: false (no throw) when argv[1] is a path realpathSync cannot resol
   } finally {
     process.argv[1] = saved
   }
+})
+
+// ---- codex node-entry sentinel (Codex-only; Claude adapter/reducer untouched) ----
+
+test("codex adapter: `: skill-graph enter <node>` on shell rewrites to a Skill event", () => {
+  const n = parseCodex({ tool_name: "shell", tool_input: { command: ": skill-graph enter research" } }, ["node", "codex.mjs", "PreToolUse"])
+  assert.equal(n.toolName, "Skill")
+  assert.deepEqual(n.toolInput, { skill: "research" })
+})
+
+test("codex adapter: sentinel works when the command arrives as an argv array (bash -lc wrapper)", () => {
+  const n = parseCodex({ tool_name: "local_shell", tool_input: { command: ["bash", "-lc", ": skill-graph enter build"] } }, ["node", "codex.mjs", "PreToolUse"])
+  assert.equal(n.toolName, "Skill")
+  assert.deepEqual(n.toolInput, { skill: "build" })
+})
+
+test("codex adapter: `override <node>` maps to the workflow:override skill with a target", () => {
+  const n = parseCodex({ tool_name: "shell", tool_input: { command: ": skill-graph override release" } }, ["node", "codex.mjs", "PreToolUse"])
+  assert.equal(n.toolName, "Skill")
+  assert.deepEqual(n.toolInput, { skill: "workflow:override", to: "release" })
+})
+
+test("codex adapter: an ordinary shell command is NOT rewritten (stays Bash)", () => {
+  const n = parseCodex({ tool_name: "shell", tool_input: { command: "ls -la" } }, ["node", "codex.mjs", "PreToolUse"])
+  assert.equal(n.toolName, "Bash")
+  assert.deepEqual(n.toolInput, { command: "ls -la" })
+})
+
+test("codexGovern: SessionStart injects the node-entry convention when a workflow exists", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-cx-"))
+  mkdirSync(join(dir, ".skill-graph"), { recursive: true })
+  writeFileSync(join(dir, ".skill-graph", "w.workflow.mjs"), `export default (sg) => { const wf = sg.workflow("w"); wf.skill("a"); wf.root("a"); return wf }`)
+  const d = await codexGovern({ event: "SessionStart", cwd: dir, sessionId: "lead", toolInput: {} })
+  assert.equal(d.action, "context")
+  assert.ok(d.context.includes(": skill-graph enter"))
+  assert.equal(d.context, CONVENTION)
+})
+
+test("codexGovern: SessionStart with no workflow stays quiet (allow)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sg-cx-none-"))
+  const d = await codexGovern({ event: "SessionStart", cwd: dir, sessionId: "lead", toolInput: {} })
+  assert.equal(d.action, "allow")
 })
