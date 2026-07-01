@@ -80,13 +80,16 @@ async function prompt(o) {
       const s = (await rl.question("Scope? project/[global]: ")).trim().toLowerCase()
       o.scope = s === "project" ? "project" : "global"
     }
-    if (!o.sessionStart) {
-      const ss = (await rl.question("Add optional SessionStart resume hook? y/[n]: ")).trim().toLowerCase()
-      o.sessionStart = ss === "y" || ss === "yes"
-    }
-    if (o.scaffold) {
-      const sc = (await rl.question("Scaffold a starter workflow if none exists? [y]/n: ")).trim().toLowerCase()
-      o.scaffold = !(sc === "n" || sc === "no")
+    // SessionStart and scaffolding only apply to `init`; uninstall just needs harness + scope.
+    if (o.cmd === "init") {
+      if (!o.sessionStart) {
+        const ss = (await rl.question("Add optional SessionStart resume hook? y/[n]: ")).trim().toLowerCase()
+        o.sessionStart = ss === "y" || ss === "yes"
+      }
+      if (o.scaffold) {
+        const sc = (await rl.question("Scaffold a starter workflow if none exists? [y]/n: ")).trim().toLowerCase()
+        o.scaffold = !(sc === "n" || sc === "no")
+      }
     }
   } finally {
     rl.close()
