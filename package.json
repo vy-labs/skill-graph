@@ -1,6 +1,6 @@
 {
   "name": "skill-graph",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Deterministic workflows your AI coding agent can't ignore. Wire the work as a graph of skills; a hook enforces order, tool permissions, joins, and loops at every step. Works with Claude Code and Codex.",
   "type": "module",
   "main": "src/index.mjs",
@@ -24,6 +24,6 @@
   "keywords": ["workflow", "state-machine", "agent", "dag", "claude-code", "codex", "governor", "ai-agents", "automation"],
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/vy-labs/skill-graph.git" },
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=22" },
   "sideEffects": false
 }

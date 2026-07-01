@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['18.x', '20.x', '22.x'] # package.json engines: node >=18
+        node-version: ['22.x'] # target current Node (22+); older lines aren't supported
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
