@@ -1,6 +1,6 @@
 {
   "name": "skill-graph",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "Deterministic workflows your AI coding agent can't ignore. Wire the work as a graph of skills; a hook enforces order, tool permissions, joins, and loops at every step. Works with Claude Code and Codex.",
   "type": "module",
   "main": "src/index.mjs",
