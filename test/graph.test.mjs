@@ -56,6 +56,25 @@ test("skill: doneWhen, join (all default / any), and loop options are recorded",
   assert.deepEqual(n.d.loop, { max: 3, noProgress: true })
 })
 
+test("skill: execution profile (model / effort / agent) defaults to null and is recorded when set", () => {
+  const wf = workflow("w")
+  wf.skill("plain")
+  wf.skill("cheap", { model: "haiku", effort: "low" })
+  wf.skill("delegated", { agent: "explorer", model: "sonnet", effort: "high" })
+  const n = wf.toJSON().nodes
+  // default null → graphs that omit the profile are unchanged (back-compat)
+  assert.equal(n.plain.model, null)
+  assert.equal(n.plain.effort, null)
+  assert.equal(n.plain.agent, null)
+  // recorded verbatim so a host driver can read them off the serialized graph
+  assert.equal(n.cheap.model, "haiku")
+  assert.equal(n.cheap.effort, "low")
+  assert.equal(n.cheap.agent, null)
+  assert.equal(n.delegated.agent, "explorer")
+  assert.equal(n.delegated.model, "sonnet")
+  assert.equal(n.delegated.effort, "high")
+})
+
 test("duplicate skill node throws", () => {
   const wf = workflow("w")
   wf.skill("a")

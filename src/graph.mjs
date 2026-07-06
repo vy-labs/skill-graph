@@ -44,7 +44,7 @@ class Workflow {
   constructor(name) {
     this.name = name
     this._root = null
-    this.nodes = new Map() // name -> { name, allowedTools, doneWhen, join }
+    this.nodes = new Map() // name -> { name, allowedTools, doneWhen, join, loop, model, effort, agent }
     this.edges = [] // { from, to, when, max, fork }
     this._allowAlways = [] // [{ tool, paths? }] — tools allowed at EVERY node (see allowAlways)
   }
@@ -62,6 +62,13 @@ class Workflow {
   // allowedTools: null = unrestricted; [] = skills only (no direct tools); [..] = only those.
   // loop: { max, noProgress } — when set, this node's back-edges draw on the real loop guard
   //   (max-iter + same-signature no-progress) instead of a simple per-edge counter.
+  //
+  // Execution profile (all optional, all default null → no change in behavior for graphs that omit
+  // them). The reducer/governor NEVER acts on these — a PreToolUse hook can only allow/deny, it can't
+  // switch a model or spawn. They are carried on the serialized graph so a HOST driver that runs a
+  // node as a subagent can read them: `model` (a harness model alias/id or "inherit"), `effort` (a
+  // reasoning-budget level), and `agent` (a companion subagent type to dispatch instead of running the
+  // skill in-context). Harnesses without subagents (e.g. Codex) ignore all three and run in-context.
   skill(name, opts = {}) {
     if (this.nodes.has(name)) throw new Error(`duplicate skill node: ${name}`)
     this.nodes.set(name, {
@@ -70,6 +77,9 @@ class Workflow {
       doneWhen: opts.doneWhen ?? null,
       join: opts.join ?? "all",
       loop: opts.loop ?? null,
+      model: opts.model ?? null,
+      effort: opts.effort ?? null,
+      agent: opts.agent ?? null,
     })
     return new Handle(this, name)
   }

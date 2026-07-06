@@ -53,6 +53,14 @@ lives in the [examples](../examples).
 | `doneWhen` | a predicate that must hold for the node to count as complete (it gates the joins of its successors). Omit it and the node completes when the agent legally moves on. |
 | `join` | `"all"` (default) or `"any"`. For a node with several parents, complete all of them, or at least one, before it unlocks. |
 | `loop` | `{ max, noProgress }`. When set, this node's back edges (`loopTo`) draw on the loop guard (see Loops). |
+| `model` | optional (default `null`). A harness model alias/id, or `"inherit"`. Carried on the serialized graph for a host driver to read — the governor never acts on it (a PreToolUse hook can't switch a model). |
+| `effort` | optional (default `null`). A reasoning-budget level for a host driver. Carried, never enforced by the governor. |
+| `agent` | optional (default `null`). A companion subagent type a host driver may dispatch to run this node instead of running the skill in-context. Harnesses without subagents (e.g. Codex) ignore it and run in-context. |
+
+`model`/`effort`/`agent` are the **execution profile**: they let a graph declare *how* a node should
+run (which model tier, how much reasoning, in-context vs. delegated to a subagent) as data on the
+node. The governor stays a pure allow/deny state machine and ignores them; enforcement is the host's
+job — a driver reads them off `toJSON()` and spawns accordingly. Omit them and nothing changes.
 
 ### Edges (handle methods)
 
