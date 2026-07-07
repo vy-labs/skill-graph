@@ -68,7 +68,8 @@ class Workflow {
   // switch a model or spawn. They are carried on the serialized graph so a HOST driver that runs a
   // node as a subagent can read them: `model` (a harness model alias/id or "inherit"), `effort` (a
   // reasoning-budget level), and `agent` (a companion subagent type to dispatch instead of running the
-  // skill in-context). Harnesses without subagents (e.g. Codex) ignore all three and run in-context.
+  // skill in-context). A host with no named-agent registry to resolve `agent` against (e.g. Codex)
+  // ignores all three and runs the node in-context.
   skill(name, opts = {}) {
     if (this.nodes.has(name)) throw new Error(`duplicate skill node: ${name}`)
     this.nodes.set(name, {

@@ -55,7 +55,7 @@ lives in the [examples](../examples).
 | `loop` | `{ max, noProgress }`. When set, this node's back edges (`loopTo`) draw on the loop guard (see Loops). |
 | `model` | optional (default `null`). A harness model alias/id, or `"inherit"`. Carried on the serialized graph for a host driver to read — the governor never acts on it (a PreToolUse hook can't switch a model). |
 | `effort` | optional (default `null`). A reasoning-budget level for a host driver. Carried, never enforced by the governor. |
-| `agent` | optional (default `null`). A companion subagent type a host driver may dispatch to run this node instead of running the skill in-context. Harnesses without subagents (e.g. Codex) ignore it and run in-context. |
+| `agent` | optional (default `null`). A companion subagent type a host driver may dispatch to run this node instead of running the skill in-context. A host with no named-agent registry to resolve it against (e.g. Codex) ignores it and runs in-context. |
 
 `model`/`effort`/`agent` are the **execution profile**: they let a graph declare *how* a node should
 run (which model tier, how much reasoning, in-context vs. delegated to a subagent) as data on the
