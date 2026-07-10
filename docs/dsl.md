@@ -75,20 +75,29 @@ job — a driver reads them off `toJSON()` and spawns accordingly. Omit them and
 ### `wf.allowAlways(rules)` — tools permitted at every node
 
 Some tools should be allowed everywhere without repeating them in each node's `allowedTools`, and a host
-often needs to write its own bookkeeping files at any node *without* opening `Write` wholesale. `rules`
-is an array of `{ tool, paths? }`:
+often needs to write its own bookkeeping files — or run one specific status command — at any node
+*without* opening `Write` or `Bash` wholesale. `rules` is an array of `{ tool, paths?, commands? }`:
 
-- **no `paths`** — the tool is allowed at every node, regardless of the node's `allowedTools`.
+- **no `paths`/`commands`** — the tool is allowed at every node, regardless of the node's `allowedTools`.
 - **`paths: [glob, …]`** — the tool is allowed only when the call's target file path matches one of the
   globs; otherwise the call falls through to the node's normal gating. This keeps a delegation gate
   intact (e.g. "at the context node you must delegate, not write the artifact yourself") while still
   letting the host persist its own state.
+- **`commands: [glob, …]`** — the tool is allowed only when the call's **command string** matches one of
+  the globs. This is what lets a `Bash` status command run at *every* node — including phases where
+  `Bash` is intentionally denied so code can't be authored or run early — without allowing `Bash` at
+  large. A non-matching command falls through to the node's gating, so the gate still holds.
+
+When a rule has **both** `paths` and `commands`, the call must match at least one glob in at least one
+**present** dimension (an OR across dimensions). A scoped rule that doesn't match never loosens
+anything — it only ever *grants* the matched calls.
 
 Calling `allowAlways` more than once appends. It serialises as `graph.allowAlways` (default `[]`, so
 existing workflows are unchanged). **The globs are the host's choice — the engine ships none.**
 
 `tool` is itself a name pattern: a `*` globs a family (`"mcp__*"` grants every MCP tool), and a name
-with no `*` is an exact match. A tool-name glob composes with the path globs — both must match.
+with no `*` is an exact match. A tool-name glob composes with the path/command globs — the tool name
+must match AND (for a scoped rule) at least one present dimension.
 
 ```js
 wf.allowAlways([
@@ -96,14 +105,32 @@ wf.allowAlways([
   { tool: "Task" }, { tool: "Agent" },                         // delegating to subagents is always fine
   { tool: "Write", paths: [".myhost/**", ".skill-graph/**"] }, // host bookkeeping only — not Write at large
   { tool: "Edit",  paths: [".myhost/**", ".skill-graph/**"] },
+  { tool: "Bash",  commands: ["ao report*"] },                 // one status command everywhere — not Bash at large
 ])
 ```
 
-The checked path comes from the tool call's `file_path`, `path`, or `filePath`. Globs match a path
+The checked path comes from the tool call's `file_path`, `path`, or `filePath`. Path globs match a path
 string purely (no filesystem): `*` stays within a segment, `**` crosses segments, and a relative glob
 like `.myhost/**` matches whether the harness reports a relative `.myhost/x` or an absolute
 `/abs/project/.myhost/x` (it matches at any `/` boundary). A tool that carries no path field is never
-granted by a path-scoped rule — it stays gated by the node.
+granted by a path-scoped rule.
+
+The checked command comes from the tool call's `command` (Claude Code `Bash`), falling back to `cmd`
+and joining an argv array (Codex shell shapes). **Command** globs are *not* path-structured: `*` matches
+any run of characters — including spaces, `/`, and newlines (so `"ao report*"` matches
+`ao report --path a/b`, and a `*` spans a multiline command). The match is anchored to the **whole**
+command (a pattern with no `*` is an exact match), on purpose: this is a deny-gate, so `["ao report"]`
+must not accidentally match `rm -rf / && ao report`. A tool that carries no command is never granted by
+a command-scoped rule.
+
+Because the match is whole-command, mind how your harness delivers the command. Codex may wrap a shell
+call (e.g. `bash -lc "…"`) or pass an argv array that joins to `bash -lc ao report`; a glob like
+`"ao report*"` (anchored at the start) will not match that prefix. Write the glob to fit the shape your
+harness actually sends (e.g. lead with a `*`), or scope with a distinctive token the wrapper preserves.
+
+> **Node `allowedTools` is not command-scoped.** A node's `allowedTools` entries are tool-name patterns
+> only; command scoping lives exclusively in `allowAlways`, which is precisely where "permit this one
+> command at every node, even where the tool is otherwise denied" belongs.
 ## Predicates
 
 Descriptors the adapter evaluates against the project working tree (cwd):
@@ -125,7 +152,9 @@ On each tool call, in order:
 4. Entering a skill node. Allowed when it sits on the frontier, or an edge from an active node permits it
    (the guard is true, the join is satisfied, the loop budget remains). Otherwise blocked, with the legal
    next steps named.
-5. Any other tool. Allowed when it is in the active node's `allowedTools`. Otherwise blocked.
+5. Any other tool. A workflow-level `allowAlways` grant wins first (an unscoped rule, a matching path
+   glob, or a matching command glob); otherwise it is allowed when it is in the active node's
+   `allowedTools`, and blocked if not.
 
 Every guarantee (a join waits, a loop caps, a step that leaves the graph is blocked) is an explicit
 branch. The outcome is deterministic, not a model judgment.
