@@ -37,15 +37,17 @@ export function matchTool(pattern, name) {
 }
 
 // Pure glob over a whole COMMAND string. Unlike matchGlob, a command is not path-structured — it has
-// spaces, flags, and slashes with no segment meaning — so `*` matches ANY run of characters (including
-// `/` and spaces), exactly like matchTool. A pattern with no `*` is an exact match of the whole
-// command (no accidental prefix match). No regex, globs only. No IO. Same construction as matchTool;
-// kept separate for intent and because the input is a command, not a tool name.
+// spaces, flags, and slashes with no segment meaning — so `*` matches ANY run of characters. It is
+// anchored to the WHOLE command (a no-`*` pattern is an exact match, no accidental prefix): this is a
+// deny-gate, so `["ao report"]` must not accidentally match `rm -rf / && ao report`. The regex uses the
+// `s` (dotAll) flag so `*` also spans newlines — commands are routinely multiline (heredocs, a
+// multiline `git commit -m`), unlike the tool names matchTool handles. That newline difference is why
+// this is NOT a delegation to matchTool. No IO.
 export function matchCommand(pattern, command) {
   if (typeof command !== "string") return false
   if (!pattern.includes("*")) return pattern === command
   const re = pattern.replace(/[.+^${}()|[\]\\?]/g, "\\$&").replace(/\*/g, ".*")
-  return new RegExp(`^${re}$`).test(command)
+  return new RegExp(`^${re}$`, "s").test(command)
 }
 
 // The path a tool call targets, across the field names different harnesses use. null when none.
@@ -65,18 +67,20 @@ const toolCommand = (toolInput) => {
 // allows the tool everywhere. A SCOPED rule (paths and/or commands present) grants only when the call
 // matches at least one glob in at least one PRESENT dimension — an OR across dimensions — so a rule
 // with both `paths` and `commands` matches if either the target path OR the command string matches.
-// A scoped rule that doesn't match falls through to node gating, so it only ever GRANTS (never
-// loosens): e.g. { tool: "Bash", commands: ["ao report*"] } permits that one status command at every
-// node — including phases where Bash is otherwise denied — without opening Bash at large. The rule's
-// `tool` is itself a name pattern, so "mcp__*" grants a whole family.
+// A scoped rule that doesn't match falls through to node gating, so it only ever GRANTS, never denies:
+// e.g. { tool: "Bash", commands: ["ao report*"] } permits that one status command at every node —
+// including phases where Bash is otherwise denied — without opening Bash at large. The rule's `tool` is
+// itself a name pattern, so "mcp__*" grants a whole family.
 function allowAlwaysGrants(graph, toolName, toolInput) {
   const path = toolPath(toolInput)
   const command = toolCommand(toolInput)
   for (const rule of graph.allowAlways ?? []) {
     if (!matchTool(rule.tool, toolName)) continue
     if (!rule.paths && !rule.commands) return true // unscoped → allowed at every node
-    if (rule.paths && path != null && rule.paths.some((g) => matchGlob(g, path))) return true
-    if (rule.commands && command != null && rule.commands.some((g) => matchCommand(g, command))) return true
+    // Truthy (not `!= null`) so a call carrying no path/command — or an empty "" — is never granted by
+    // a scoped rule; it stays gated by the node (matches the original path-scope behavior).
+    if (rule.paths && path && rule.paths.some((g) => matchGlob(g, path))) return true
+    if (rule.commands && command && rule.commands.some((g) => matchCommand(g, command))) return true
   }
   return false
 }

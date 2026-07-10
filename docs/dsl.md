@@ -117,9 +117,16 @@ granted by a path-scoped rule.
 
 The checked command comes from the tool call's `command` (Claude Code `Bash`), falling back to `cmd`
 and joining an argv array (Codex shell shapes). **Command** globs are *not* path-structured: `*` matches
-any run of characters, including spaces and `/` (so `"ao report*"` matches `ao report --path a/b`); a
-pattern with no `*` is an exact match of the whole command. A tool that carries no command is never
-granted by a command-scoped rule.
+any run of characters — including spaces, `/`, and newlines (so `"ao report*"` matches
+`ao report --path a/b`, and a `*` spans a multiline command). The match is anchored to the **whole**
+command (a pattern with no `*` is an exact match), on purpose: this is a deny-gate, so `["ao report"]`
+must not accidentally match `rm -rf / && ao report`. A tool that carries no command is never granted by
+a command-scoped rule.
+
+Because the match is whole-command, mind how your harness delivers the command. Codex may wrap a shell
+call (e.g. `bash -lc "…"`) or pass an argv array that joins to `bash -lc ao report`; a glob like
+`"ao report*"` (anchored at the start) will not match that prefix. Write the glob to fit the shape your
+harness actually sends (e.g. lead with a `*`), or scope with a distinctive token the wrapper preserves.
 
 > **Node `allowedTools` is not command-scoped.** A node's `allowedTools` entries are tool-name patterns
 > only; command scoping lives exclusively in `allowAlways`, which is precisely where "permit this one

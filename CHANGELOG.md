@@ -15,8 +15,11 @@ All notable changes to this project are documented here. The format is based on
   and `commands`, the call must match at least one glob in at least one present dimension (OR); a
   scoped rule that doesn't match falls through to node gating, so it only ever grants. The command
   string is read from the tool input's `command`, falling back to `cmd` and to a joined argv array
-  (Codex shell shapes). Command globs are not path-structured: `*` matches any run of characters
-  (including `/` and spaces); a pattern with no `*` is an exact whole-command match.
+  (Codex shell shapes). Command globs are not path-structured: `*` matches any run of characters —
+  including `/`, spaces, and newlines (dotAll), so a `*` spans a multiline command. The match is
+  anchored to the whole command (a pattern with no `*` is an exact match), deliberately, so a glob
+  can't accidentally match a command that merely contains it. A call carrying no command — or an empty
+  command — is never granted by a command-scoped rule.
 - `matchCommand(pattern, command)` exported from `src/reducer.mjs` (mirrors `matchGlob`/`matchTool`).
 
 ### Notes

@@ -474,6 +474,27 @@ test("matchCommand: * spans any chars incl / and spaces; no-* is exact whole-com
   assert.equal(matchCommand("ao report", "ao report working"), false) // no accidental prefix match
   assert.equal(matchCommand("*", "anything at all /x"), true)
   assert.equal(matchCommand("ao report*", null), false) // no command → no match
+  // `*` spans newlines too (dotAll): commands are routinely multiline (heredocs, multiline -m).
+  assert.equal(matchCommand("git commit*", "git commit -m fix\nsecond line"), true)
+  assert.equal(matchCommand("*", "a\nb"), true)
+})
+
+test("allowAlways (commands): a multiline command matched by a glob is granted (dotAll)", () => {
+  const wf = workflow("cmd-ml")
+  wf.skill("a", { allowedTools: ["AskUserQuestion"] })
+  wf.root("a")
+  wf.allowAlways([{ tool: "Bash", commands: ["git commit*"] }])
+  const g = wf.toJSON()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Bash", { command: "git commit -m one\ntwo" }), probe()).action, "allow")
+})
+
+test("allowAlways: a path-scoped rule never grants a call whose path is the empty string", () => {
+  // Regression: an empty file_path must not be granted even by a catch-all `**` (a truthy, not != null,
+  // guard) — otherwise a path-less/empty-path call would slip a strong Write gate.
+  const g = AA([{ tool: "Write", paths: ["**"] }])
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Write", { file_path: "" }), probe()).action, "deny")
 })
 
 // A single node that denies Bash outright (allows only AskUserQuestion), plus a command-scoped rule.
