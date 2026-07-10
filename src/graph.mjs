@@ -1,7 +1,5 @@
 // Skill-graph DSL. Builds a serializable workflow graph that the pure reducer (reducer.mjs) consumes
 // and the Mermaid renderer (mermaid.mjs) draws. No IO, no model — just data construction.
-//
-// See docs/specs/2026-06-29-skill-graph-workflow-framework.md for the design.
 
 // ---- predicate descriptors --------------------------------------------------------------------
 // Opaque to the reducer for EVALUATION: the hook adapter runs them and passes booleans in via
@@ -49,13 +47,23 @@ class Workflow {
     this._allowAlways = [] // [{ tool, paths? }] — tools allowed at EVERY node (see allowAlways)
   }
 
-  // Tools permitted at every node, regardless of a node's allowedTools. Each rule is { tool, paths? }:
-  //   no `paths`           → the tool is allowed everywhere.
-  //   `paths: [glob, ...]` → the tool is allowed only when the call's target file path matches a glob;
-  //                          otherwise the call falls through to the node's normal gating.
-  // The globs are the HOST's choice — the engine ships none. Calling this more than once appends.
+  // Tools permitted at every node, regardless of a node's allowedTools. Each rule is
+  // { tool, paths?, commands? }:
+  //   no `paths`/`commands`     → the tool is allowed everywhere.
+  //   `paths: [glob, ...]`      → allowed only when the call's target file path matches a glob.
+  //   `commands: [glob, ...]`   → allowed only when the call's command string matches a glob (for Bash:
+  //                               permit e.g. a status command at every node, even where Bash is denied).
+  // When both `paths` and `commands` are present the call must match at least one glob in at least one
+  // present dimension (OR). A scoped rule that doesn't match falls through to the node's normal gating,
+  // so it only ever grants. The globs are the HOST's choice — the engine ships none. Calling this more
+  // than once appends.
   allowAlways(rules) {
-    for (const r of rules) this._allowAlways.push(r.paths ? { tool: r.tool, paths: [...r.paths] } : { tool: r.tool })
+    for (const r of rules) {
+      const rule = { tool: r.tool }
+      if (r.paths) rule.paths = [...r.paths]
+      if (r.commands) rule.commands = [...r.commands]
+      this._allowAlways.push(rule)
+    }
     return this
   }
 

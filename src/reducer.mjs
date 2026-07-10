@@ -4,8 +4,6 @@
 // passed in via `probe`, so this function touches nothing and is fully unit-testable. Every guarantee
 // (a join waits, a loop is capped, an off-graph call is denied) is an explicit branch that returns a
 // `deny`; there is no "should" the model can talk past.
-//
-// See docs/specs/2026-06-29-skill-graph-workflow-framework.md.
 
 import { evaluateGuard, applyRecord } from "./loop.mjs"
 import { describe } from "./graph.mjs"
@@ -38,18 +36,47 @@ export function matchTool(pattern, name) {
   return new RegExp(`^${re}$`).test(name)
 }
 
+// Pure glob over a whole COMMAND string. Unlike matchGlob, a command is not path-structured — it has
+// spaces, flags, and slashes with no segment meaning — so `*` matches ANY run of characters (including
+// `/` and spaces), exactly like matchTool. A pattern with no `*` is an exact match of the whole
+// command (no accidental prefix match). No regex, globs only. No IO. Same construction as matchTool;
+// kept separate for intent and because the input is a command, not a tool name.
+export function matchCommand(pattern, command) {
+  if (typeof command !== "string") return false
+  if (!pattern.includes("*")) return pattern === command
+  const re = pattern.replace(/[.+^${}()|[\]\\?]/g, "\\$&").replace(/\*/g, ".*")
+  return new RegExp(`^${re}$`).test(command)
+}
+
 // The path a tool call targets, across the field names different harnesses use. null when none.
 const toolPath = (toolInput) => toolInput?.file_path ?? toolInput?.path ?? toolInput?.filePath ?? null
 
-// Does a workflow-level allowAlways rule grant this tool call? An unscoped rule (no paths) allows the
-// tool everywhere; a path-scoped rule allows it only when the call's target path matches a glob. The
-// rule's `tool` is itself a name pattern, so "mcp__*" grants a whole family.
+// The command string a tool call carries, across the field names / shapes different harnesses use
+// (Claude Code Bash: `command` string; Codex shell: `command`/`cmd`, a string or an argv array —
+// mirrors codex.mjs's commandString). null when none.
+const toolCommand = (toolInput) => {
+  const c = toolInput?.command ?? toolInput?.cmd
+  if (typeof c === "string") return c
+  if (Array.isArray(c)) return c.join(" ")
+  return null
+}
+
+// Does a workflow-level allowAlways rule grant this tool call? An unscoped rule (no paths, no commands)
+// allows the tool everywhere. A SCOPED rule (paths and/or commands present) grants only when the call
+// matches at least one glob in at least one PRESENT dimension — an OR across dimensions — so a rule
+// with both `paths` and `commands` matches if either the target path OR the command string matches.
+// A scoped rule that doesn't match falls through to node gating, so it only ever GRANTS (never
+// loosens): e.g. { tool: "Bash", commands: ["ao report*"] } permits that one status command at every
+// node — including phases where Bash is otherwise denied — without opening Bash at large. The rule's
+// `tool` is itself a name pattern, so "mcp__*" grants a whole family.
 function allowAlwaysGrants(graph, toolName, toolInput) {
   const path = toolPath(toolInput)
+  const command = toolCommand(toolInput)
   for (const rule of graph.allowAlways ?? []) {
     if (!matchTool(rule.tool, toolName)) continue
-    if (!rule.paths) return true // unscoped → allowed at every node
-    if (path && rule.paths.some((g) => matchGlob(g, path))) return true
+    if (!rule.paths && !rule.commands) return true // unscoped → allowed at every node
+    if (rule.paths && path != null && rule.paths.some((g) => matchGlob(g, path))) return true
+    if (rule.commands && command != null && rule.commands.some((g) => matchCommand(g, command))) return true
   }
   return false
 }

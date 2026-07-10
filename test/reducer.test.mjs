@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { workflow, fileExists, shell, marker } from "../src/graph.mjs"
-import { decide, initialState, edgeKey, joinSatisfied, matchGlob, matchTool, OVERRIDE_SKILL } from "../src/reducer.mjs"
+import { decide, initialState, edgeKey, joinSatisfied, matchGlob, matchTool, matchCommand, OVERRIDE_SKILL } from "../src/reducer.mjs"
 
 const LEAD = "sess-lead"
 const probe = (over = {}) => ({ sessionId: LEAD, doneWhen: {}, guards: {}, ...over })
@@ -462,4 +462,77 @@ test("allowAlways: a tool-name glob composes with the path glob (both must match
   assert.equal(decide(g, st, toolEvP("mcp__fs__write", { file_path: ".myhost/x" }), probe()).action, "allow") // tool glob + path glob
   assert.equal(decide(g, st, toolEvP("mcp__fs__write", { file_path: "src/x" }), probe()).action, "deny") // path glob fails
   assert.equal(decide(g, st, toolEvP("mcp__net__get", { file_path: ".myhost/x" }), probe()).action, "deny") // tool glob fails
+})
+
+// ---- command-scoped allowAlways (Bash status commands at a Bash-denied node) ----
+
+test("matchCommand: * spans any chars incl / and spaces; no-* is exact whole-command match", () => {
+  assert.equal(matchCommand("ao report*", "ao report working"), true)
+  assert.equal(matchCommand("ao report*", "ao report --path src/a/b"), true) // * crosses /
+  assert.equal(matchCommand("ao report*", "rm -rf app/"), false)
+  assert.equal(matchCommand("ao report", "ao report"), true) // exact
+  assert.equal(matchCommand("ao report", "ao report working"), false) // no accidental prefix match
+  assert.equal(matchCommand("*", "anything at all /x"), true)
+  assert.equal(matchCommand("ao report*", null), false) // no command → no match
+})
+
+// A single node that denies Bash outright (allows only AskUserQuestion), plus a command-scoped rule.
+function CMD() {
+  const wf = workflow("cmd")
+  wf.skill("a", { allowedTools: ["AskUserQuestion"] })
+  wf.root("a")
+  wf.allowAlways([{ tool: "Bash", commands: ["ao report*"] }])
+  return wf.toJSON()
+}
+
+test("allowAlways (commands): a matching Bash command is allowed at a node whose allowedTools excludes Bash", () => {
+  const g = CMD()
+  const st = initialState(g, LEAD) // active [a], node allows only AskUserQuestion (Bash denied)
+  assert.equal(decide(g, st, toolEvP("Bash", { command: "ao report working" }), probe()).action, "allow")
+})
+
+test("allowAlways (commands): a non-matching Bash command is still denied at the same node (gate holds)", () => {
+  const g = CMD()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Bash", { command: "rm -rf app/" }), probe()).action, "deny")
+  assert.equal(decide(g, st, toolEvP("Bash", {}), probe()).action, "deny") // no command field → not granted
+})
+
+test("allowAlways (commands): the command reads from a Codex-style cmd array too", () => {
+  const g = CMD()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Bash", { cmd: ["ao", "report", "working"] }), probe()).action, "allow")
+})
+
+test("allowAlways: a rule with NO commands/paths behaves exactly as before (no broadening)", () => {
+  // Unscoped Read is allowed everywhere; unrelated Bash stays gated — identical to pre-feature behavior.
+  const g = AA([{ tool: "Read" }])
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Read", {}), probe()).action, "allow")
+  assert.equal(decide(g, st, toolEvP("Bash", { command: "ao report x" }), probe()).action, "deny") // Read rule can't grant Bash
+})
+
+test("allowAlways: paths and commands on one rule are OR'd (either dimension may match)", () => {
+  const wf = workflow("cmd-path")
+  wf.skill("a", { allowedTools: ["AskUserQuestion"] })
+  wf.root("a")
+  wf.allowAlways([{ tool: "Bash", paths: [".myhost/**"], commands: ["ao report*"] }])
+  const g = wf.toJSON()
+  const st = initialState(g, LEAD)
+  assert.equal(decide(g, st, toolEvP("Bash", { command: "ao report working" }), probe()).action, "allow") // command dim matches
+  assert.equal(decide(g, st, toolEvP("Bash", { file_path: ".myhost/x" }), probe()).action, "allow") // path dim matches
+  assert.equal(decide(g, st, toolEvP("Bash", { command: "rm -rf app/" }), probe()).action, "deny") // neither matches
+})
+
+test("allowAlways: the builder carries a commands field through toJSON (and keeps paths-only unchanged)", () => {
+  const wf = workflow("ser")
+  wf.skill("a")
+  wf.root("a")
+  wf.allowAlways([{ tool: "Bash", commands: ["ao report*"] }, { tool: "Write", paths: [".x/**"] }, { tool: "Read" }])
+  const g = wf.toJSON()
+  assert.deepEqual(g.allowAlways, [
+    { tool: "Bash", commands: ["ao report*"] },
+    { tool: "Write", paths: [".x/**"] }, // paths-only rule serializes exactly as before
+    { tool: "Read" }, // unscoped rule unchanged
+  ])
 })

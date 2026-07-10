@@ -1,5 +1,4 @@
 // Render a workflow graph (and, optionally, a live run's state) to a Mermaid flowchart. Pure.
-// See docs/specs/2026-06-29-skill-graph-workflow-framework.md §9.
 
 import { describe } from "./graph.mjs"
 

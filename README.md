@@ -150,8 +150,10 @@ Same input, same decision, every time. Run state is persisted per git branch und
 - **Join**: a node with several parents opens once its join (`all` or `any`) is satisfied.
 - **Loop**: `loopTo` adds a back-edge; the loop policy stops at a max count, and early when two
   iterations report the same failure, so a stuck loop never spins.
-- **allowAlways**: `wf.allowAlways(rules)` permits tools at *every* node, either outright or only for
-  file paths matching globs you supply. The globs are yours; the engine ships none.
+- **allowAlways**: `wf.allowAlways(rules)` permits tools at *every* node — outright, only for file
+  paths matching globs (`paths`), or only for command strings matching globs (`commands`, e.g. one
+  `Bash` status command at nodes where `Bash` is otherwise denied). The globs are yours; the engine
+  ships none.
 - **Override**: `Skill("workflow:override", { to: "<node>" })` is always allowed and recorded, for when
   reality diverges from the plan.
 
